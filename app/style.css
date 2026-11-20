@@ -206,6 +206,10 @@ input:focus, select:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px rgb
 .field.grow { flex: 1; }
 #titleInput { font-family: "Anton", sans-serif; font-weight: 400; letter-spacing: 0.03em; color: var(--gold); }
 #subtitleInput { font-family: "Yellowtail", cursive; font-weight: 400; font-size: 17px; color: #ff8ad8; }
+.tag-head { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.check { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.check input { width: auto; height: auto; margin: 0; accent-color: var(--pink); }
+#trySamples small { color: var(--muted); font-size: 11px; margin-left: 4px; }
 .tag-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 6px; }
 .tag-field { display: flex; align-items: center; gap: 4px; }
 .tag-field span { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #0f0a1c; border: 1px solid var(--line); font-size: 11px; color: var(--muted); }

@@ -1,6 +1,6 @@
-// Code-drawn scenery that ties the panels together: the sky gradient with cloud bands, a striped retro sun, the
-// sea with glints, a skyline and palm silhouettes, a warm glow behind the title, a lens flare, and the final
-// grain and vignette over the whole cover. Everything is plain Canvas 2D paths and gradients.
+// Golden Mile Cover Studio scenery, drawn in code to tie the panels together: the sky gradient with cloud bands, a
+// striped retro sun, the sea with glints, a skyline and palm silhouettes, a warm glow behind the title, the dark
+// title band of the mosaic layouts, a lens flare, and the film grain over the whole cover. Plain Canvas 2D only.
 
 /** Small deterministic PRNG so the scenery is the same on every render and export. */
 export function seededRandom(seed) {
@@ -243,8 +243,55 @@ export function drawTitleGlow(ctx, spot, theme) {
   ctx.restore();
 }
 
-/** Lens flare from the sun: an anamorphic streak and ghost discs towards the opposite corner. */
-export function drawLensFlare(ctx, W, H, x, y, size, theme) {
+/**
+ * The title band laid over the middle of a mosaic: an elliptical dark glow so the lettering reads at any size, a
+ * warm anamorphic light streak through its centre and two hairline neon rules fading out at the ends.
+ */
+export function drawTitleBand(ctx, band, theme) {
+  const { x, y, rx, ry } = band;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(rx, ry);
+  const dark = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  dark.addColorStop(0, alpha(theme.bg, 0.9));
+  dark.addColorStop(0.5, alpha(theme.bg, 0.74));
+  dark.addColorStop(0.8, alpha(theme.bg, 0.32));
+  dark.addColorStop(1, alpha(theme.bg, 0));
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.arc(0, 0, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.translate(x, y);
+  ctx.scale(rx * 0.95, ry * 0.12);
+  const streak = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  streak.addColorStop(0, alpha(theme.sun[1], 0.55));
+  streak.addColorStop(0.35, alpha(theme.sun[2], 0.22));
+  streak.addColorStop(1, alpha(theme.sun[3], 0));
+  ctx.fillStyle = streak;
+  ctx.beginPath();
+  ctx.arc(0, 0, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  for (const dy of [-ry * 0.8, ry * 0.8]) {
+    const g = ctx.createLinearGradient(x - rx * 0.8, 0, x + rx * 0.8, 0);
+    g.addColorStop(0, alpha(theme.neon, 0));
+    g.addColorStop(0.5, alpha(theme.neon, 0.75));
+    g.addColorStop(1, alpha(theme.neon, 0));
+    ctx.fillStyle = g;
+    ctx.shadowColor = theme.neon;
+    ctx.shadowBlur = 10;
+    ctx.fillRect(x - rx * 0.8, y + dy - 1.5, rx * 1.6, 3);
+  }
+  ctx.restore();
+}
+
+/** Lens flare from the sun: an anamorphic streak, a hot core and faint rays (skipped when `show` is false). */
+export function drawLensFlare(ctx, W, H, x, y, size, theme, show = true) {
+  if (!show) return;
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
   const streak = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);

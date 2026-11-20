@@ -1,12 +1,12 @@
-// Afterglow Cover Studio: the editor. Holds the state (photos, size, layout, grade, captions, per-panel crops),
+// Golden Mile Cover Studio: the editor. Holds the state (photos, size, layout, grade, captions, per-panel crops),
 // wires the three steps (1 add photos, 2 caption, 3 export PNG), the live preview with direct panel editing,
 // undo/redo, and the window.coverStudio hook a headless browser uses to drive the app.
 
 import { COVER_SIZES, LAYOUT_IDS, LAYOUT_NAMES, getLayout } from './layouts.js';
 import { GRADES, getGrade } from './grades.js';
 import { TITLE_FONTS } from './lettering.js';
-import { renderCover } from './composer.js';
-import { assignPhotosToPanels, smartCropForPanel } from './autoLayout.js';
+import { nameTagsFor, renderCover } from './composer.js';
+import { assignPhotosToPanels, cropForPanel } from './autoLayout.js';
 import { imagesFromClipboard, loadPhotoFiles, loadSamplePhotos } from './photoLoader.js';
 import { attachPanelEditor } from './panelEditor.js';
 import { exportAllSizes, exportCoverPng, renderCoverCanvas } from './exportPng.js';
@@ -14,21 +14,22 @@ import { createHistory } from './history.js';
 import { drawGradeThumbnail, drawLayoutThumbnail } from './presetThumbnails.js';
 
 const DEFAULT_CAPTION = {
-  title: 'Sunset Syndicate',
-  subtitle: 'Salt & Chrome',
-  tagline: 'Every sunset has a getaway car',
+  title: 'Sundown Racket',
+  subtitle: 'Paid in Sunsets',
+  tagline: 'Everyone wants a cut of the sunset',
   quote: 'A neon-soaked joyride',
-  quoteSource: 'The Coastline Herald',
-  billing: 'Afterglow Pictures presents · The Driver · a Salt & Chrome production · The Angler · music by Midnight FM · filmed on the boardwalk',
+  quoteSource: 'The Boardwalk Gazette',
+  billing: 'Golden Mile Pictures presents · The Boss · a Sundown Racket production · The Driver · The Fixer · The Rider · music by Midnight FM · filmed on the boardwalk',
   badge: 'Summer 2026 | Original ★ Collector’s Edition',
   coming: 'Coming soon',
-  tags: ['The Driver', 'The Angler', '', '', '', '', ''],
+  tags: ['', '', '', '', '', '', ''],
+  autoTags: true,
 };
 
 const state = {
   photos: [],
   sizeKey: 'wide',
-  layoutId: 'hero-mosaic',
+  layoutId: 'cast-mosaic',
   gradeId: 'sunset-gold',
   titleFont: 'anton',
   caption: structuredClone(DEFAULT_CAPTION),
@@ -72,8 +73,11 @@ function coverOptionsFor(sizeKey) {
     arrangement: arrangementFor(sizeKey),
     caption: state.caption,
     titleFont: state.titleFont,
+    debug: debugOverlay,
   };
 }
+
+let debugOverlay = false;
 
 function snapshot() {
   return {
@@ -144,6 +148,8 @@ function renderPreview() {
   renderCover(ctx, coverOptionsFor(state.sizeKey), pw / size.w);
   editor.drawOverlay();
   updatePanelTools();
+  const placeholders = autoTagPlaceholders();
+  $('nameTags').querySelectorAll('input').forEach((inp, i) => (inp.placeholder = placeholders[i] ?? 'none'));
 }
 
 /** Mini renders of all three sizes under the preview, plus the layout and grade picker thumbnails. */
@@ -184,7 +190,7 @@ async function addPhotos(photos) {
   state.arrangements = {};
   state.selected = -1;
   renderPhotoStrip();
-  setStatus(`${state.photos.length} photo${state.photos.length > 1 ? 's' : ''} loaded — panels auto-filled with smart crops`);
+  setStatus(`${state.photos.length} photo${state.photos.length > 1 ? 's' : ''} loaded — every panel framed on a face`);
   refreshAll();
 }
 
@@ -229,7 +235,7 @@ function setPanelPhoto(index, photo) {
   const layout = getLayout(state.sizeKey, state.layoutId);
   const arr = arrangementFor();
   recordHistory();
-  arr[index] = smartCropForPanel(photo, layout.panels[index]).crop;
+  arr[index] = cropForPanel(photo, layout.panels[index], 'portrait').crop;
   scheduleRender({ thumbs: true });
 }
 
@@ -443,6 +449,11 @@ function wireCaptionFields() {
       scheduleRender({ thumbs: true });
     });
   }
+  $('autoTags').addEventListener('change', (e) => {
+    recordHistory();
+    state.caption.autoTags = e.target.checked;
+    refreshAll();
+  });
   $('titleFont').addEventListener('change', (e) => {
     recordHistory();
     state.titleFont = TITLE_FONTS[e.target.value] ? e.target.value : 'anton';
@@ -450,11 +461,23 @@ function wireCaptionFields() {
   });
 }
 
+/** The tag each panel shows when its field is empty (the photo's own tag), used as the field's placeholder. */
+function autoTagPlaceholders() {
+  const layout = getLayout(state.sizeKey, state.layoutId);
+  const auto = nameTagsFor(layout, arrangementFor(), photosById(), { ...state.caption, tags: [] });
+  return auto.map((t) => t || 'none');
+}
+
 function buildNameTagInputs() {
   const layout = getLayout(state.sizeKey, state.layoutId);
   const box = $('nameTags');
+  $('autoTags').checked = state.caption.autoTags !== false;
+  const placeholders = autoTagPlaceholders();
   if (box.dataset.count === String(layout.panels.length) && !box.contains(document.activeElement)) {
-    box.querySelectorAll('input').forEach((inp, i) => (inp.value = state.caption.tags[i] ?? ''));
+    box.querySelectorAll('input').forEach((inp, i) => {
+      inp.value = state.caption.tags[i] ?? '';
+      inp.placeholder = placeholders[i];
+    });
     return;
   }
   if (box.contains(document.activeElement)) return;
@@ -467,7 +490,8 @@ function buildNameTagInputs() {
     n.textContent = String(i + 1);
     const inp = document.createElement('input');
     inp.id = `tag${i + 1}`;
-    inp.placeholder = i === 0 ? 'hero tag' : 'none';
+    inp.placeholder = placeholders[i];
+    inp.title = 'Type a name tag for this panel (a single - hides it)';
     inp.value = state.caption.tags[i] ?? '';
     inp.addEventListener('input', () => {
       recordTyping();
@@ -609,7 +633,12 @@ function exposeTestHook(ready) {
     },
     getState: () => JSON.parse(JSON.stringify(snapshot())),
     describePhotos: () =>
-      state.photos.map((p) => ({ name: p.name, w: p.w, h: p.h, grid: [p.analysis.w, p.analysis.h], face: p.analysis.face, heroScore: p.analysis.heroScore })),
+      state.photos.map((p) => ({ name: p.name, tag: p.tag, w: p.w, h: p.h, grid: [p.analysis.w, p.analysis.h], face: p.analysis.face, quality: p.analysis.quality })),
+    photosForDebug: () => state.photos,
+    setDebugOverlay(on) {
+      debugOverlay = !!on;
+      scheduleRender();
+    },
     async renderCoverDataURL(sizeKey = state.sizeKey) {
       await ready;
       return renderCoverCanvas(sizeKey, coverOptionsFor).toDataURL('image/png');

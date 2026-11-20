@@ -1,11 +1,14 @@
-// Hands in Afterglow Cover Studio, an entry for make.fun's gta6-cover-art-01 bounty (Node 22, standard library only).
+// Hands in Golden Mile Cover Studio v2, an entry for make.fun's gta6-cover-art-01 bounty (Node 22, standard
+// library only).
 //
 // The app is app/: static files that desktop Chrome opens offline (index.html, style.css, plain ES modules in
-// app/src/, the fonts in app/fonts/ and the two sample photos in app/samples/), with no build step and no network
-// request. It turns your own photos into open-world-game style key art: a slanted mosaic of smart-cropped, colour
-// graded panels under a sunset drawn in code, a chunky gradient title with extrude and stripe cuts, a neon script
-// subtitle, a tagline ribbon, name tags, a review quote, billing, a seal and a barcode, exported as PNGs at
-// 1080x1080, 1080x1350 and 1920x1080. Photos are read in the browser and never leave the machine.
+// app/src/, the fonts in app/fonts/, the two kit photos in app/samples/ and the six-person demo cast in
+// app/samples/cast/), with no build step and no network request. It turns your own photos into open-world-game
+// style key art: a cast mosaic of face-aware crops (one tall hero and six more panels behind slanted gutters),
+// colour graded per panel under a sunset drawn in code, a huge chrome-gradient title band across the middle with
+// extrude and stripe cuts, a neon script subtitle, a tagline ribbon, name tags kept clear of every face, a review
+// quote, billing, a seal and a barcode, exported as PNGs at 1080x1080, 1080x1350 and 1920x1080. Photos are read in
+// the browser and never leave the machine.
 //
 // This program copies app/ and screenshots/ (made by `node tools/shoot.mjs`; the first by name is the cover) to the
 // output folder and writes dossier.json, the summary the judge reads, with the vendored make.fun library.
@@ -14,7 +17,7 @@
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-app.ts';
@@ -34,12 +37,16 @@ function checkEntry(root: string): string[] {
     'app/src/main.js',
     'app/src/composer.js',
     'app/src/lettering.js',
+    'app/src/faceFinder.js',
+    'app/src/layouts.js',
     'app/fonts/Anton-Regular.ttf',
     'app/fonts/FONTS.md',
     'app/samples/boulevard.jpg',
     'app/samples/pier.jpg',
+    'app/samples/PHOTOS.md',
   ];
   for (const rel of required) if (!existsSync(join(root, rel))) problems.push(`missing ${rel}`);
+  problems.push(...checkDemoCast(root));
   const shotsDir = join(root, 'screenshots');
   const shots = existsSync(shotsDir) ? readdirSync(shotsDir).sort() : [];
   const images = shots.filter((name) => /^[A-Za-z0-9._-]+\.(jpe?g|png)$/i.test(name));
@@ -49,6 +56,29 @@ function checkEntry(root: string): string[] {
     else if (statSync(join(shotsDir, name)).size > 262144) problems.push(`screenshots/${name} is over 256 KiB`);
   }
   if (images.length && !/cover/i.test(images[0])) problems.push(`the first screenshot (${images[0]}) should be the cover`);
+  return problems;
+}
+
+/**
+ * The demo cast behind "Try samples": app/samples/cast/ must hold exactly six .jpg portraits, each a real JPEG
+ * (starts with the FF D8 marker) of at most 200 KiB, and every one must be listed in app/samples/PHOTOS.md.
+ */
+function checkDemoCast(root: string): string[] {
+  const problems: string[] = [];
+  const castDir = join(root, 'app', 'samples', 'cast');
+  if (!existsSync(castDir)) return ['missing app/samples/cast/'];
+  const photos = readdirSync(castDir).filter((name) => name.toLowerCase().endsWith('.jpg')).sort();
+  if (photos.length !== 6) problems.push(`app/samples/cast/ holds ${photos.length} .jpg files, needs 6`);
+  const listPath = join(root, 'app', 'samples', 'PHOTOS.md');
+  const list = existsSync(listPath) ? readFileSync(listPath, 'utf8') : '';
+  for (const name of photos) {
+    const file = join(castDir, name);
+    const size = statSync(file).size;
+    if (size > 200 * 1024) problems.push(`app/samples/cast/${name} is ${size} bytes, over 200 KiB`);
+    const head = readFileSync(file).subarray(0, 2);
+    if (head[0] !== 0xff || head[1] !== 0xd8) problems.push(`app/samples/cast/${name} is not a JPEG`);
+    if (!list.includes(`cast/${name}`)) problems.push(`app/samples/PHOTOS.md does not list cast/${name}`);
+  }
   return problems;
 }
 

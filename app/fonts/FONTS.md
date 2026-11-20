@@ -1,6 +1,6 @@
 # Fonts
 
-Afterglow Cover Studio ships five font files, downloaded unchanged from the Google Fonts repository and loaded with
+Golden Mile Cover Studio ships five font files, downloaded unchanged from the Google Fonts repository and loaded with
 `@font-face` from this folder (see `../style.css`). The app waits for `document.fonts` before drawing, so every
 cover uses these files and never a system font. All of them are free to use, embed and redistribute.
 

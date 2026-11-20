@@ -1,13 +1,33 @@
-// Loads photos locally (file picker, drag and drop, paste, or the bundled samples) with createImageBitmap,
-// downsizes very large ones, makes a thumbnail and runs the smart-crop analysis. Nothing is uploaded anywhere.
+// Golden Mile Cover Studio photo loading: the file picker, drag and drop, paste, or the bundled samples, decoded
+// locally with createImageBitmap. Very large photos are downsized, each gets a thumbnail, the smart-crop analysis
+// (face box, saliency maps) and a name tag for its panel. Nothing is uploaded anywhere.
 
 import { analyzePhoto } from './smartCrop.js';
 
 const MAX_SIDE = 2400;
 let nextPhotoId = 1;
+let nextAutoTag = 0;
 
-/** Wraps a decoded image as a photo: source canvas or bitmap, size, thumbnail and saliency analysis. */
-export function makePhoto(bitmap, name) {
+/** Name tags handed to the user's own photos in the order they are added (each can be retyped per panel). */
+export const AUTO_TAGS = ['The Boss', 'The Wheelman', 'The Fixer', 'The Muscle', 'The Lookout', 'The Hustler', 'The Courier', 'The Rookie', 'The Shark', 'The Mechanic'];
+
+/**
+ * The sample photos: the two kit photos and the six-person demo cast (fictional people made with an image model,
+ * see samples/PHOTOS.md), each with its name tag.
+ */
+export const SAMPLE_PHOTOS = [
+  { file: 'samples/cast/boss.jpg', tag: 'The Boss' },
+  { file: 'samples/boulevard.jpg', tag: 'The Driver' },
+  { file: 'samples/cast/rider.jpg', tag: 'The Rider' },
+  { file: 'samples/cast/fixer.jpg', tag: 'The Fixer' },
+  { file: 'samples/cast/mechanic.jpg', tag: 'The Mechanic' },
+  { file: 'samples/cast/lookout.jpg', tag: 'The Lookout' },
+  { file: 'samples/cast/courier.jpg', tag: 'The Courier' },
+  { file: 'samples/pier.jpg', tag: 'The Angler' },
+];
+
+/** Wraps a decoded image as a photo: source canvas or bitmap, size, thumbnail, saliency analysis and name tag. */
+export function makePhoto(bitmap, name, tag) {
   let source = bitmap;
   let w = bitmap.width;
   let h = bitmap.height;
@@ -28,7 +48,8 @@ export function makePhoto(bitmap, name) {
   thumb.width = Math.round(w * ts);
   thumb.height = Math.round(h * ts);
   thumb.getContext('2d').drawImage(source, 0, 0, thumb.width, thumb.height);
-  return { id: nextPhotoId++, name, source, w, h, thumb, analysis: analyzePhoto(source, w, h) };
+  const photoTag = tag ?? AUTO_TAGS[nextAutoTag++ % AUTO_TAGS.length];
+  return { id: nextPhotoId++, name, tag: photoTag, source, w, h, thumb, analysis: analyzePhoto(source, w, h) };
 }
 
 /** Decodes one image file (or blob) into a photo. */
@@ -51,13 +72,14 @@ export async function loadPhotoFiles(files) {
   return photos;
 }
 
-/** The two bundled sample photos, read from the app's own folder. */
-export async function loadSamplePhotos(names = ['boulevard', 'pier']) {
+/** The bundled sample photos (all eight, or those whose file names contain one of `names`), read from app/. */
+export async function loadSamplePhotos(names) {
+  const list = names ? SAMPLE_PHOTOS.filter((s) => names.some((n) => s.file.includes(n))) : SAMPLE_PHOTOS;
   const photos = [];
-  for (const n of names) {
-    const res = await fetch(`samples/${n}.jpg`);
+  for (const s of list) {
+    const res = await fetch(s.file);
     const blob = await res.blob();
-    photos.push(makePhoto(await createImageBitmap(blob), `${n}.jpg`));
+    photos.push(makePhoto(await createImageBitmap(blob), s.file.split('/').pop(), s.tag));
   }
   return photos;
 }

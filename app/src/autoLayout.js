@@ -1,73 +1,67 @@
-// Auto layout: fills every panel of a layout from the loaded photos. The most face-like, contrasty photo takes the
-// hero panel; every other panel goes to the photo whose best crop for that panel's role (face, sky, sea, detail...)
-// scores highest, balanced so every photo appears, and each crop avoids what its photo already shows elsewhere and
-// anything that would look like a panel already on the cover (no two stretches of the same sea).
+// Auto layout for Golden Mile Cover Studio: fills every panel of a layout from the loaded photos. The best face
+// (confident, large, contrasty) takes the hero panel; every other panel gets a different person, chosen by how well
+// that photo's head fits the panel's free area. With fewer photos than panels the photos come back in other
+// framings (close-up, waist-up mirrored, background crops such as palms against the sky or the sea), so even a
+// single photo gives a cover of distinct-looking panels.
 
-import { findCropWindow, windowToCrop } from './smartCrop.js';
+import { frameHeadInFocus, sceneCropForPanel } from './smartCrop.js';
 
-/** Photos sorted for the hero slot: face confidence, contrast and warm light. */
+/** Photos sorted for the hero slot: best portrait quality first. */
 export function rankPhotosForHero(photos) {
-  return [...photos].sort((a, b) => b.analysis.heroScore - a.analysis.heroScore);
+  return [...photos].sort((a, b) => b.analysis.quality - a.analysis.quality);
 }
 
-/** The smallest crop (share of the full-fit height) that keeps a panel sharp: limits upscaling of small photos. */
-function minCropFraction(photo, panel) {
-  const aspect = panel.bounds.w / panel.bounds.h;
-  const fitH = photo.w / photo.h > aspect ? photo.h : photo.w / aspect;
-  return Math.min(1, (panel.bounds.h * (panel.hero ? 0.8 : 0.55)) / fitH);
-}
+const PORTRAIT_STYLES = new Set(['portrait', 'closeup', 'mid']);
 
-/** One smart crop for one panel from one photo, avoiding the given windows and looks. */
-export function smartCropForPanel(photo, panel, used = [], looks = []) {
-  const aspect = panel.bounds.w / panel.bounds.h;
-  const win = findCropWindow(photo.analysis, panel.role, aspect, used, minCropFraction(photo, panel), looks);
-  return { win, crop: { photoId: photo.id, ...windowToCrop(photo.analysis, win, aspect), flip: false } };
-}
-
-/** The role a photo plays in a panel: a face already on the cover turns into a scene instead of repeating. */
-function effectiveRole(role, usage, photoCount) {
-  const faceShown = usage.roles.has('face') || usage.roles.has('mid');
-  if ((role === 'face' || role === 'mid') && faceShown) {
-    if (photoCount > 1) return usage.roles.has('wide') ? 'detail' : 'wide';
-    return usage.roles.has('face') && usage.roles.has('mid') ? 'detail' : usage.roles.has('face') ? 'mid' : 'face';
+/** One crop for one panel from one photo in a framing style; scene styles avoid windows already used. */
+export function cropForPanel(photo, panel, style = 'portrait', usedWindows = [], flip = false) {
+  if (PORTRAIT_STYLES.has(style)) {
+    const framed = frameHeadInFocus(photo, panel, style);
+    framed.crop.flip = flip;
+    return { crop: framed.crop, fit: framed.fit, win: null };
   }
-  return role;
+  const scene = sceneCropForPanel(photo, panel, style, usedWindows, flip);
+  return { crop: scene.crop, fit: 1, win: scene.win };
 }
+
+/** The framings used when a photo appears again, in order. */
+const REUSE_STYLES = ['closeup', 'wide', 'mid', 'sky', 'detail', 'sea'];
+
+const focusArea = (p) => (p.focus ? p.focus.w * p.focus.h : p.bounds.w * p.bounds.h);
 
 /** Builds the arrangement (one crop entry per panel) for a layout from a list of photos. */
 export function assignPhotosToPanels(photos, layout) {
   const panels = layout.panels;
   if (!photos.length) return panels.map(() => ({ photoId: null, cx: 0.5, cy: 0.5, zoom: 1, flip: false }));
   const ranked = rankPhotosForHero(photos);
-  const usage = new Map(photos.map((p) => [p.id, { count: 0, windows: [], roles: new Set() }]));
-  const looks = [];
+  const order = [...panels].sort((a, b) => (b.hero ? 1 : 0) - (a.hero ? 1 : 0) || focusArea(b) - focusArea(a));
   const result = new Array(panels.length);
-  // hero first, then the most specific roles (faces, sky, sea) before the generic ones, larger panels first
-  const priority = { face: 0, mid: 1, sky: 2, sea: 3, wide: 4, detail: 5 };
-  const order = [...panels].sort(
-    (a, b) => (b.hero ? 1 : 0) - (a.hero ? 1 : 0) || (priority[a.role] ?? 9) - (priority[b.role] ?? 9) || b.bounds.w * b.bounds.h - a.bounds.w * a.bounds.h,
-  );
+  const pool = new Set(ranked);
+  // pass 1: a different person in every panel while photos last
   for (const panel of order) {
+    if (!pool.size) break;
     let pick = null;
-    const candidates = panel.hero ? [ranked[0]] : ranked;
-    for (const photo of candidates) {
-      const u = usage.get(photo.id);
-      const role = effectiveRole(panel.role, u, photos.length);
-      const { win, crop } = smartCropForPanel(photo, { ...panel, role }, u.windows, role === 'face' || role === 'mid' ? [] : looks);
-      let score = win.score - 0.35 * u.count + (u.count === 0 ? 0.6 : 0);
-      if (role !== panel.role) score -= 0.5;
-      if (!pick || score > pick.score) pick = { score, photo, role, win, crop };
+    for (const photo of pool) {
+      const c = cropForPanel(photo, panel, 'portrait');
+      const q = photo.analysis.quality;
+      const score = c.fit * 2 + q * (panel.hero ? 3 : 0.8) + (photo.analysis.face.confidence > 0 ? 0.3 : 0);
+      if (!pick || score > pick.score) pick = { score, photo, crop: c.crop };
     }
-    const u = usage.get(pick.photo.id);
-    u.roles.add(pick.role);
-    u.count++;
-    // portraits never block a scene (the face itself is kept out of scene crops anyway);
-    // scenes are compared with scenes, by position on their photo and by look across the cover
-    if (pick.role !== 'face' && pick.role !== 'mid') {
-      u.windows.push(pick.win);
-      looks.push(pick.win.look);
-    }
+    pool.delete(pick.photo);
     result[panel.index] = pick.crop;
+  }
+  // pass 2: photos come back in other framings, the best faces first
+  const windows = new Map(photos.map((p) => [p.id, []]));
+  let k = 0;
+  for (const panel of order) {
+    if (result[panel.index]) continue;
+    const photo = ranked[k % ranked.length];
+    const style = REUSE_STYLES[Math.floor(k / ranked.length) % REUSE_STYLES.length];
+    const flip = (Math.floor(k / ranked.length) + (style === 'mid' ? 1 : 0)) % 2 === 1;
+    const c = cropForPanel(photo, panel, style, windows.get(photo.id), flip);
+    if (c.win) windows.get(photo.id).push(c.win);
+    result[panel.index] = c.crop;
+    k++;
   }
   return result;
 }

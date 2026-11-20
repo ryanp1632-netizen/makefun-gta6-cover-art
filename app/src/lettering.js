@@ -1,4 +1,4 @@
-// Poster lettering drawn with Canvas 2D: the chunky sunset-gradient title with a thick outline, a 3D extrude,
+// Golden Mile Cover Studio lettering, drawn with Canvas 2D: the chunky sunset-gradient title with a thick outline, a 3D extrude,
 // stripe cuts, gloss and sparkles; the neon script subtitle; the tagline ribbon; name tags; the review quote with
 // stars and laurels; the billing block; the round seal; the barcode and the release line.
 // All sizes are in design pixels (the cover's own pixel grid); the caller's transform scales them.
@@ -29,10 +29,14 @@ function makeCanvas(w, h) {
   return c;
 }
 
-/** Splits a title into one to three lines: explicit breaks ("/" or newline) first, else balanced word groups. */
-export function splitTitleLines(title) {
+/**
+ * Splits a title into one to three lines: explicit breaks ("/" or newline) first, else balanced word groups.
+ * `maxLines` 1 (the title bands of the mosaic layouts) keeps the whole title on one line.
+ */
+export function splitTitleLines(title, maxLines = 3) {
   const clean = (title || ' ').toUpperCase().trim() || ' ';
-  if (/[\n/|]/.test(clean)) return clean.split(/[\n/|]/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+  if (maxLines === 1) return [clean.replace(/\s*[\n/|]\s*/g, ' ')];
+  if (/[\n/|]/.test(clean)) return clean.split(/[\n/|]/).map((s) => s.trim()).filter(Boolean).slice(0, maxLines);
   const words = clean.split(/\s+/);
   if (words.length === 1 || clean.length <= 8) return [clean];
   if (words.length === 2) return words;
@@ -166,7 +170,7 @@ function drawTitleFace(fctx, line, font, theme) {
  * Returns the placed lines so the script subtitle can hang off the last one.
  */
 export function drawChromeTitle(ctx, title, box, theme, fontKey = 'anton') {
-  const lines = splitTitleLines(title);
+  const lines = splitTitleLines(title, box.maxLines ?? 3);
   const fit = fitTitleLines(ctx, lines, box, fontKey);
   const { font } = fit;
   const k = pixelScaleOf(ctx);
@@ -402,6 +406,16 @@ export function drawTaglineRibbon(ctx, text, rect, theme) {
   ctx.shadowOffsetY = h * 0.05 * k;
   ctx.fillText(text.toUpperCase(), size * 0.08, h * 0.04);
   ctx.restore();
+}
+
+/** The size of a name tag plate (without its slant overhang) for a label at a font size. */
+export function measureNameTag(ctx, text, size) {
+  ctx.save();
+  ctx.font = fontString(size, BEBAS);
+  ctx.letterSpacing = `${size * 0.12}px`;
+  const tw = ctx.measureText((text || '').toUpperCase()).width;
+  ctx.restore();
+  return { w: tw + size * 1.3, h: size * 1.18 };
 }
 
 /** A name tag plate for a panel: dark slanted plate, accent bar, spaced capitals. */

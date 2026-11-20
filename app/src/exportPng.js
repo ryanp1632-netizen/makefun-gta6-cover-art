@@ -1,4 +1,4 @@
-// PNG export: renders the cover offscreen at the exact output size (1080x1080, 1080x1350 or 1920x1080) with the
+// Golden Mile Cover Studio PNG export: renders the cover offscreen at the exact output size (1080x1080, 1080x1350 or 1920x1080) with the
 // same composer as the preview, and downloads it with canvas.toBlob. "Export all 3" downloads all three sizes.
 
 import { COVER_SIZES } from './layouts.js';
@@ -36,7 +36,7 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-/** Exports one size as a PNG download named after the title, e.g. sunset-syndicate-1920x1080.png. */
+/** Exports one size as a PNG download named after the title, e.g. sundown-racket-1920x1080.png. */
 export async function exportCoverPng(sizeKey, coverOptionsFor, title) {
   const size = COVER_SIZES[sizeKey];
   const canvas = renderCoverCanvas(sizeKey, coverOptionsFor);

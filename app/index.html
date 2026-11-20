@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Afterglow Cover Studio</title>
+  <title>Golden Mile Cover Studio</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar" id="topbar">
-    <div class="brand" id="brand"><span class="brand-mark">AFTERGLOW</span><span class="brand-sub">cover studio</span></div>
+    <div class="brand" id="brand"><span class="brand-mark">GOLDEN MILE</span><span class="brand-sub">cover studio</span></div>
     <ol class="steps" id="stepGuide">
       <li><b>1</b> Add photos</li>
       <li><b>2</b> Caption</li>
@@ -31,7 +31,7 @@
           <strong>Drop photos here</strong>
           <span>or click to browse &middot; paste works too</span>
         </label>
-        <button type="button" id="trySamples" class="secondary">&#9728; Try samples</button>
+        <button type="button" id="trySamples" class="secondary">&#9728; Try samples <small>8-person demo cast</small></button>
         <div class="photo-strip" id="photoStrip"></div>
       </section>
       <section class="card" id="layoutCard">
@@ -108,7 +108,7 @@
           <label class="field grow">Seal (centre | ring) <input id="badgeInput" maxlength="60"></label>
           <label class="field grow">Release line <input id="comingInput" maxlength="30"></label>
         </div>
-        <div class="field">Name tags per panel</div>
+        <div class="field tag-head">Name tags per panel <label class="check" for="autoTags"><input type="checkbox" id="autoTags" checked> auto from photos</label></div>
         <div class="tag-grid" id="nameTags"></div>
       </section>
       <section class="card" id="stepExport">

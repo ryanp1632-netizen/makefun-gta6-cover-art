@@ -1,14 +1,16 @@
-// Makes the entry's screenshots (Node 22+, standard library only): serves app/ on 127.0.0.1, launches headless
-// Chrome with networking extras switched off, drives the app over the DevTools protocol through its
-// window.coverStudio hook, and writes screenshots/:
-//   1-cover.jpg    the app's own 1920x1080 PNG export, scaled to 1280x720
-//   2-editor.jpg   the editor at 1280x800 with both samples loaded and a panel selected
+// Makes the screenshots of Golden Mile Cover Studio v2 (Node 22+, standard library only): serves app/ on
+// 127.0.0.1, launches headless Chrome with networking extras switched off, drives the app over the DevTools
+// protocol through its window.coverStudio hook, and writes screenshots/:
+//   1-cover.jpg    the app's own 1920x1080 PNG export (Cast Mosaic, all 8 sample photos), scaled to 1280x720
+//   2-editor.jpg   the editor at 1280x800 with the samples loaded and a panel selected
 //   3-portrait.jpg the app's 1080x1350 PNG export (another layout and grade), scaled to 1024x1280
 //   4-square.jpg   the app's 1080x1080 PNG export (another layout and grade), as is
 // Exported covers are only scaled (in the page, with a canvas) and JPEG-encoded to fit 256 KiB; never edited.
 // Fails on any console error or uncaught exception in the page, and checks every file against the limits.
 //
 //   node tools/shoot.mjs [--debug-dir <dir>]   (--debug-dir also saves the full-size PNG exports there)
+//   node tools/shoot.mjs --debug-dir <dir> --gallery <grade> [--faces]   every layout at every ratio, as JPEGs;
+//                                               --faces draws lettering zones, free areas and head boxes on them
 
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -43,7 +45,7 @@ function startStaticServer() {
 }
 
 async function launchChrome() {
-  const profile = mkdtempSync(join(tmpdir(), 'afterglow-shoot-'));
+  const profile = mkdtempSync(join(tmpdir(), 'goldenmile-shoot-'));
   const args = [
     '--headless=new',
     '--remote-debugging-port=0',
@@ -199,14 +201,14 @@ async function runInteractionSelfTest(cdp) {
   const geometry = await evaluate(cdp, `(async () => {
     const L = await import('./src/layouts.js');
     const E = await import('./src/panelEditor.js');
-    const lay = L.getLayout('wide', 'hero-mosaic');
+    const lay = L.getLayout('wide', 'cast-mosaic');
     const r = document.getElementById('overlay').getBoundingClientRect();
     const k = r.width / 1920;
     const toScreen = (p) => ({ x: r.left + p.x * k, y: r.top + p.y * k });
     const centre = (poly) => ({ x: poly.reduce((a, p) => a + p.x, 0) / 4, y: poly.reduce((a, p) => a + p.y, 0) / 4 });
     return { p1: toScreen(centre(lay.panels[1].poly)), p2: toScreen(centre(lay.panels[2].poly)), b1: toScreen(E.badgeCenter(lay.panels[1], 1 / k)) };
   })()`);
-  const entry = (i) => evaluate(cdp, `window.coverStudio.getState().arrangements['wide:hero-mosaic'][${i}]`);
+  const entry = (i) => evaluate(cdp, `window.coverStudio.getState().arrangements['wide:cast-mosaic'][${i}]`);
   const mouse = (type, p, extra = {}) => cdp.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra });
   const drag = async (from, to) => {
     await mouse('mouseMoved', from, { buttons: 0, button: 'none' });
@@ -228,7 +230,7 @@ async function runInteractionSelfTest(cdp) {
   const undone = await entry(1);
   check(Math.abs(undone.cx - before.cx) < 1e-6 && Math.abs(undone.zoom - before.zoom) < 1e-6, 'undo restores pan and zoom');
   const sizeAfterUndo = await evaluate(cdp, `window.coverStudio.getState().sizeKey + ':' + window.coverStudio.getState().layoutId`);
-  check(sizeAfterUndo === 'wide:hero-mosaic', 'two undos step back exactly two edits (still 16:9 hero mosaic)');
+  check(sizeAfterUndo === 'wide:cast-mosaic', 'two undos step back exactly two edits (still 16:9 Cast Mosaic)');
   const e2 = await entry(2);
   await drag(geometry.b1, geometry.p2);
   const s1 = await entry(1);
@@ -236,11 +238,11 @@ async function runInteractionSelfTest(cdp) {
   check(s1.photoId === e2.photoId && s1.cx === e2.cx && s2.cx === before.cx, 'dragging a number badge swaps two panels');
   await evaluate(cdp, `document.getElementById('undoBtn').click()`);
   await evaluate(cdp, `(() => { const t = document.getElementById('titleInput'); t.focus(); t.select(); })()`);
-  await cdp.send('Input.insertText', { text: 'Neon Harbour' });
+  await cdp.send('Input.insertText', { text: 'Night Shift Money' });
   await pause(150);
   const title = await evaluate(cdp, `window.coverStudio.getState().caption.title`);
-  check(title === 'Neon Harbour', 'typing in the title field updates the cover caption');
-  const downloads = mkdtempSync(join(tmpdir(), 'afterglow-dl-'));
+  check(title === 'Night Shift Money', 'typing in the title field updates the cover caption');
+  const downloads = mkdtempSync(join(tmpdir(), 'goldenmile-dl-'));
   try {
     await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads, eventsEnabled: true });
     await evaluate(cdp, `document.getElementById('exportAll').click()`);
@@ -256,7 +258,7 @@ async function runInteractionSelfTest(cdp) {
       const d = imageSize(readFileSync(join(downloads, f)));
       return `${f}:${d?.w}x${d?.h}`;
     });
-    const want = ['neon-harbour-1080x1080.png:1080x1080', 'neon-harbour-1080x1350.png:1080x1350', 'neon-harbour-1920x1080.png:1920x1080'];
+    const want = ['night-shift-money-1080x1080.png:1080x1080', 'night-shift-money-1080x1350.png:1080x1350', 'night-shift-money-1920x1080.png:1920x1080'];
     check(JSON.stringify(sizes) === JSON.stringify(want), `"Export all 3" downloads ${sizes.join(', ')}`);
   } finally {
     rmSync(downloads, { recursive: true, force: true });
@@ -295,12 +297,47 @@ async function main() {
       console.log(JSON.stringify(await evaluate(cdp, argv[argv.indexOf('--inspect') + 1]), null, 1));
       return;
     }
+    if (argv.includes('--face-sheet') && debugDir) {
+      // development aid: every loaded photo with its face box (cyan) and head box (yellow), on one sheet
+      mkdirSync(debugDir, { recursive: true });
+      const sheet = await evaluate(cdp, `(async () => {
+        const F = await import('./src/faceFinder.js');
+        const photos = window.coverStudio.photosForDebug();
+        const cell = 300;
+        const c = document.createElement('canvas');
+        c.width = cell * 4; c.height = Math.ceil(photos.length / 4) * cell * 2;
+        photos.forEach((p, i) => {
+          // the soft skin map, grey levels, below the photos
+          const a = p.analysis, img = new ImageData(a.w, a.h);
+          for (let j = 0; j < a.w * a.h; j++) { const v = a.skinMap[j] * 255; img.data.set([v, v, v, 255], j * 4); }
+          const t = document.createElement('canvas'); t.width = a.w; t.height = a.h; t.getContext('2d').putImageData(img, 0, 0);
+          const s = Math.min(cell / a.w, cell / a.h);
+          c.getContext('2d').drawImage(t, (i % 4) * cell, Math.ceil(photos.length / 4) * cell + Math.floor(i / 4) * cell, a.w * s, a.h * s);
+        });
+        const x = c.getContext('2d');
+        photos.forEach((p, i) => {
+          const s = Math.min(cell / p.w, cell / p.h);
+          const ox = (i % 4) * cell, oy = Math.floor(i / 4) * cell;
+          x.drawImage(p.source, ox, oy, p.w * s, p.h * s);
+          const a = p.analysis, k = s / a.scale;
+          const box = (b, col) => { x.strokeStyle = col; x.lineWidth = 3; x.strokeRect(ox + b.x * k, oy + b.y * k, b.w * k, b.h * k); };
+          box(a.face, '#00ffff'); box(F.headBoxOf(a.face), '#ffee00');
+          x.fillStyle = '#fff'; x.font = '16px sans-serif';
+          x.fillText(p.name + ' c=' + a.face.confidence.toFixed(2) + ' q=' + a.quality.toFixed(2), ox + 4, oy + 18);
+        });
+        return c.toDataURL('image/jpeg', 0.85);
+      })()`);
+      writeDataUrl(join(debugDir, 'face-sheet.jpg'), sheet);
+      return;
+    }
     if (argv.includes('--gallery') && debugDir) {
       // development aid: every layout at every ratio in one grade, as JPEGs in the debug folder
       mkdirSync(debugDir, { recursive: true });
       const grade = argv[argv.indexOf('--gallery') + 1];
+      if (argv.includes('--faces')) await evaluate(cdp, `window.coverStudio.setDebugOverlay(true)`);
+      const layoutIds = await evaluate(cdp, `import('./src/layouts.js').then((m) => m.LAYOUT_IDS)`);
       for (const size of ['wide', 'portrait', 'square']) {
-        for (const layout of ['hero-mosaic', 'diagonal-strips', 'six-grid']) {
+        for (const layout of layoutIds) {
           await evaluate(cdp, `(async () => { const cs = window.coverStudio; cs.setLayout('${layout}'); cs.setGrade('${grade}'); cs.setSize('${size}'); await cs.settle(); })()`);
           const dims = { wide: [960, 540], portrait: [640, 800], square: [720, 720] }[size];
           const r = await evaluate(cdp, scaledCoverExpression(size, dims[0], dims[1]));
@@ -314,7 +351,7 @@ async function main() {
     for (const f of readdirSync(OUT)) if (/\.(jpe?g|png)$/i.test(f)) rmSync(join(OUT, f));
 
     const shots = [
-      { name: '1-cover.jpg', size: 'wide', w: 1280, h: 720, layout: 'hero-mosaic', grade: 'sunset-gold' },
+      { name: '1-cover.jpg', size: 'wide', w: 1280, h: 720, layout: 'cast-mosaic', grade: 'sunset-gold' },
       { name: '3-portrait.jpg', size: 'portrait', w: 1024, h: 1280, layout: 'diagonal-strips', grade: 'neon-night' },
       { name: '4-square.jpg', size: 'square', w: 1080, h: 1080, layout: 'six-grid', grade: 'tropic-teal' },
     ];
@@ -326,8 +363,8 @@ async function main() {
       console.log(`exported ${r.pngW}x${r.pngH} PNG -> ${s.name} (${bytes} bytes)`);
     }
 
-    // the editor: 16:9 hero mosaic in Sunset Gold, the angler's panel selected
-    await evaluate(cdp, `(async () => { const cs = window.coverStudio; cs.setLayout('hero-mosaic'); cs.setGrade('sunset-gold'); cs.setSize('wide'); await cs.settle(); cs.selectPanel(1); await cs.settle(); })()`);
+    // the editor: 16:9 Cast Mosaic in Sunset Gold, one panel selected
+    await evaluate(cdp, `(async () => { const cs = window.coverStudio; cs.setLayout('cast-mosaic'); cs.setGrade('sunset-gold'); cs.setSize('wide'); await cs.settle(); cs.selectPanel(1); await cs.settle(); })()`);
     let quality = 90;
     let shot;
     do {

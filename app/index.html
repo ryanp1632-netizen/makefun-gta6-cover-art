@@ -1,128 +1,23 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Golden Mile Cover Studio</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cover Snap</title>
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <header class="topbar" id="topbar">
-    <div class="brand" id="brand"><span class="brand-mark">GOLDEN MILE</span><span class="brand-sub">cover studio</span></div>
-    <ol class="steps" id="stepGuide">
-      <li><b>1</b> Add photos</li>
-      <li><b>2</b> Caption</li>
-      <li><b>3</b> Export PNG</li>
-    </ol>
-    <div class="topbar-actions">
-      <button type="button" id="undoBtn" class="ghost" title="Undo (Ctrl+Z)">&#8630; Undo</button>
-      <button type="button" id="redoBtn" class="ghost" title="Redo (Ctrl+Y)">&#8631; Redo</button>
-      <span class="privacy" id="privacyNote">&#128274; Photos never leave this device</span>
-    </div>
-  </header>
-
-  <main class="workspace" id="workspace">
-    <aside class="column" id="leftColumn">
-      <section class="card" id="stepPhotos">
-        <h2><span class="step">1</span> Add photos <small id="photoCount">none yet</small></h2>
-        <label class="dropzone" id="dropZone">
-          <input type="file" id="fileInput" accept="image/*" multiple>
-          <strong>Drop photos here</strong>
-          <span>or click to browse &middot; paste works too</span>
-        </label>
-        <button type="button" id="trySamples" class="secondary">&#9728; Try samples <small>8-person demo cast</small></button>
-        <div class="photo-strip" id="photoStrip"></div>
-      </section>
-      <section class="card" id="layoutCard">
-        <h3>Layout</h3>
-        <div class="preset-grid layouts" id="layoutPresets"></div>
-      </section>
-      <section class="card" id="gradeCard">
-        <h3>Colour grade</h3>
-        <div class="preset-grid grades" id="gradePresets"></div>
-      </section>
-      <section class="card tips" id="tipsCard">
-        <h3>Panel moves</h3>
-        <ul>
-          <li><b>Click</b> a panel to select it</li>
-          <li><b>Drag</b> to pan &middot; <b>wheel</b> to zoom</li>
-          <li><b>Drag its number</b> onto another panel to swap</li>
-          <li><b>Drop a photo</b> on a panel to fill it</li>
-        </ul>
-      </section>
-    </aside>
-
-    <section class="stage" id="stage">
-      <div class="stage-bar">
-        <div class="seg" id="sizeSwitch">
-          <button type="button" data-size="square" id="sizeSquare">1:1 <small>1080&times;1080</small></button>
-          <button type="button" data-size="portrait" id="sizePortrait">4:5 <small>1080&times;1350</small></button>
-          <button type="button" data-size="wide" id="sizeWide">16:9 <small>1920&times;1080</small></button>
-        </div>
-        <span class="size-label" id="sizeLabel"></span>
-      </div>
-      <div class="preview-wrap" id="previewWrap">
-        <div class="preview-frame" id="previewFrame">
-          <canvas id="preview"></canvas>
-          <canvas id="overlay"></canvas>
-        </div>
-      </div>
-      <div class="panel-tools" id="panelTools">
-        <span class="panel-label" id="panelLabel">Click a panel</span>
-        <span class="panel-photo" id="panelPhotoName"></span>
-        <button type="button" id="panelPrev" title="Previous photo">&#9664; Photo</button>
-        <button type="button" id="panelNext" title="Next photo">Photo &#9654;</button>
-        <button type="button" id="panelFlip" title="Mirror the photo">&#8644; Flip</button>
-        <label class="zoom" for="panelZoom">Zoom <input type="range" id="panelZoom" min="1" max="6" step="0.01" value="1"></label>
-        <button type="button" id="panelReset" title="Back to the smart crop">Reset</button>
-        <button type="button" id="autoFill" class="secondary" title="Re-run the smart auto layout">Auto-fill</button>
-      </div>
-      <div class="size-strip" id="sizeStrip">
-        <button type="button" data-size="square"><canvas data-size="square"></canvas><span>1:1</span></button>
-        <button type="button" data-size="portrait"><canvas data-size="portrait"></canvas><span>4:5</span></button>
-        <button type="button" data-size="wide"><canvas data-size="wide"></canvas><span>16:9</span></button>
-      </div>
-    </section>
-
-    <aside class="column" id="rightColumn">
-      <section class="card" id="stepCaption">
-        <h2><span class="step">2</span> Caption</h2>
-        <div class="field-row">
-          <label class="field grow">Title <input id="titleInput" maxlength="40"></label>
-          <label class="field">Font
-            <select id="titleFont">
-              <option value="anton">Anton</option>
-              <option value="saira">Saira Black</option>
-            </select>
-          </label>
-        </div>
-        <label class="field">Script subtitle <input id="subtitleInput" maxlength="40"></label>
-        <label class="field">Tagline ribbon <input id="taglineInput" maxlength="60"></label>
-        <div class="field-row">
-          <label class="field grow">Review quote <input id="quoteInput" maxlength="60"></label>
-          <label class="field grow">Source <input id="quoteSourceInput" maxlength="40"></label>
-        </div>
-        <label class="field">Billing (separate with &middot; or |) <input id="billingInput" maxlength="220"></label>
-        <div class="field-row">
-          <label class="field grow">Seal (centre | ring) <input id="badgeInput" maxlength="60"></label>
-          <label class="field grow">Release line <input id="comingInput" maxlength="30"></label>
-        </div>
-        <div class="field tag-head">Name tags per panel <label class="check" for="autoTags"><input type="checkbox" id="autoTags" checked> auto from photos</label></div>
-        <div class="tag-grid" id="nameTags"></div>
-      </section>
-      <section class="card" id="stepExport">
-        <h2><span class="step">3</span> Export PNG</h2>
-        <div class="export-row">
-          <button type="button" id="exportSquare">1:1<small>1080&times;1080</small></button>
-          <button type="button" id="exportPortrait">4:5<small>1080&times;1350</small></button>
-          <button type="button" id="exportWide">16:9<small>1920&times;1080</small></button>
-        </div>
-        <button type="button" id="exportAll" class="primary">&#11015; Export all 3 PNGs</button>
-        <p class="status" id="exportStatus">Rendered offscreen at full size, saved as PNG.</p>
-      </section>
-    </aside>
-  </main>
-  <script type="module" src="src/main.js"></script>
+<main class="app">
+  <section class="controls">
+    <h1>Cover Snap</h1>
+    <p>A photo and a caption, made into a square cover.</p>
+    <label>Photo <input id="photo" type="file" accept="image/*"></label>
+    <label>Caption <input id="caption" type="text" maxlength="40" value="Sunset Heist"></label>
+    <button id="export" type="button">Export PNG 1080 x 1080</button>
+    <p id="status" role="status"></p>
+  </section>
+  <canvas id="cover" width="1080" height="1080" aria-label="The cover"></canvas>
+</main>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>

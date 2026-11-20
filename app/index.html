@@ -1,23 +1,136 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cover Snap</title>
-<link rel="stylesheet" href="./style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Golden Mile Cover Studio</title>
+  <meta name="description" content="Turn your own photos into a crime-epic cast poster and export PNGs at 1080x1080, 1080x1350 and 1920x1080. Photos never leave this device.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="src/studio.js"></script>
 </head>
 <body>
-<main class="app">
-  <section class="controls">
-    <h1>Cover Snap</h1>
-    <p>A photo and a caption, made into a square cover.</p>
-    <label>Photo <input id="photo" type="file" accept="image/*"></label>
-    <label>Caption <input id="caption" type="text" maxlength="40" value="Sunset Heist"></label>
-    <button id="export" type="button">Export PNG 1080 x 1080</button>
-    <p id="status" role="status"></p>
-  </section>
-  <canvas id="cover" width="1080" height="1080" aria-label="The cover"></canvas>
-</main>
-<script type="module" src="./src/main.js"></script>
+  <header id="appHeader">
+    <div class="brand">
+      <canvas id="brandMark" width="44" height="44" aria-hidden="true"></canvas>
+      <h1>Golden Mile <span>Cover Studio</span></h1>
+    </div>
+    <ol id="stepRail" class="steps" aria-label="Three steps">
+      <li id="stepPhotos"><b>1</b> Add photos</li>
+      <li class="arrow" aria-hidden="true">→</li>
+      <li id="stepCaption"><b>2</b> Caption</li>
+      <li class="arrow" aria-hidden="true">→</li>
+      <li id="stepExport"><b>3</b> Export PNG</li>
+    </ol>
+    <div class="header-actions">
+      <button id="undoBtn" class="ghost" type="button" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button id="redoBtn" class="ghost" type="button" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
+      <span id="privacyNote" class="privacy"><i class="lock" aria-hidden="true"></i>Photos never leave this device</span>
+    </div>
+  </header>
+
+  <main id="studio">
+    <aside id="leftPanel" class="column">
+      <section id="photosCard" class="card">
+        <h2><b>1</b> Add photos</h2>
+        <label id="dropZone" class="dropzone" for="fileInput">
+          <input id="fileInput" type="file" accept="image/*" multiple>
+          <strong>Choose photos</strong>
+          <span>or drop / paste them anywhere</span>
+        </label>
+        <button id="samplesBtn" type="button" class="secondary">★ Try samples <small>8-person demo cast</small></button>
+        <ul id="photoList" class="thumbs" aria-label="Loaded photos"></ul>
+      </section>
+      <section id="layoutCard" class="card">
+        <h3>Layout</h3>
+        <div id="layoutPresets" class="presets layouts"></div>
+      </section>
+      <section id="gradeCard" class="card">
+        <h3>Colour grade</h3>
+        <div id="gradePresets" class="presets grades"></div>
+      </section>
+      <section id="helpCard" class="card help">
+        <h3>Panel moves</h3>
+        <ul>
+          <li><b>Click</b> a panel to select it</li>
+          <li><b>Drag</b> inside it to pan the photo</li>
+          <li><b>Wheel</b> or slider to zoom</li>
+          <li><b>Drag its number</b> onto another panel to swap</li>
+          <li><b>Drop a photo</b> on a panel to fill it</li>
+        </ul>
+      </section>
+    </aside>
+
+    <section id="stage" class="column">
+      <div class="stage-top">
+        <div id="sizeSwitch" class="segmented" role="tablist" aria-label="Output size">
+          <button type="button" data-size="1x1" role="tab">1:1 <small>1080×1080</small></button>
+          <button type="button" data-size="4x5" role="tab">4:5 <small>1080×1350</small></button>
+          <button type="button" data-size="16x9" role="tab">16:9 <small>1920×1080</small></button>
+        </div>
+        <span id="statusLine" class="status">Live preview</span>
+      </div>
+      <div id="previewWrap">
+        <canvas id="previewCanvas" aria-label="Live cover preview"></canvas>
+        <canvas id="overlayCanvas" aria-hidden="true"></canvas>
+        <div id="emptyHint" class="empty-hint">Add photos or press <b>Try samples</b></div>
+      </div>
+      <div id="panelToolbar" class="toolbar">
+        <span id="panelLabel" class="panel-label">Panel 1</span>
+        <button id="prevPhotoBtn" type="button" title="Previous photo in this panel">◀ Photo</button>
+        <button id="nextPhotoBtn" type="button" title="Next photo in this panel">Photo ▶</button>
+        <button id="flipBtn" type="button" title="Mirror the photo">⇋ Flip</button>
+        <label class="zoom">Zoom <input id="zoomSlider" type="range" min="0.6" max="3" step="0.01" value="1"></label>
+        <button id="resetPanelBtn" type="button" title="Back to the smart crop">Reset</button>
+        <button id="autoFillBtn" type="button" class="accent" title="Spread photos over all panels">✦ Auto-fill</button>
+      </div>
+      <div id="miniPreviews" class="minis" aria-label="All three sizes">
+        <figure data-size="1x1"><canvas id="miniSquare"></canvas><figcaption>1:1</figcaption></figure>
+        <figure data-size="4x5"><canvas id="miniPortrait"></canvas><figcaption>4:5</figcaption></figure>
+        <figure data-size="16x9"><canvas id="miniWide"></canvas><figcaption>16:9</figcaption></figure>
+      </div>
+    </section>
+
+    <aside id="rightPanel" class="column">
+      <section id="captionCard" class="card">
+        <h2><b>2</b> Caption</h2>
+        <div class="field-row">
+          <label class="field grow">Title <input id="titleInput" type="text" maxlength="40"></label>
+          <label class="field">Font <select id="titleFont"></select></label>
+        </div>
+        <div class="field-row">
+          <label class="field grow">Script subtitle <input id="subtitleInput" type="text" maxlength="40"></label>
+          <label class="field">Script <select id="scriptFont"></select></label>
+        </div>
+        <label class="field">Tagline ribbon <input id="taglineInput" type="text" maxlength="60"></label>
+        <div class="field-row">
+          <label class="field grow">Review quote <input id="quoteInput" type="text" maxlength="60"></label>
+          <label class="field narrow">Source <input id="quoteSourceInput" type="text" maxlength="30"></label>
+        </div>
+        <label class="field">Billing <small>(lower-case words print small)</small>
+          <textarea id="billingInput" rows="2"></textarea></label>
+        <div class="field-row">
+          <label class="field">Seal <input id="sealInput" type="text" maxlength="24"></label>
+          <label class="field grow">Seal ring <input id="sealRingInput" type="text" maxlength="48"></label>
+        </div>
+        <label class="field">Release line <input id="releaseInput" type="text" maxlength="40"></label>
+        <div class="tags-head">
+          <span>Name tags</span>
+          <label class="toggle"><input id="autoTagsToggle" type="checkbox" checked> auto from photos</label>
+        </div>
+        <div id="tagInputs" class="tag-grid"></div>
+      </section>
+      <section id="exportCard" class="card export">
+        <h2><b>3</b> Export PNG</h2>
+        <div class="export-row">
+          <button id="exportSquareBtn" type="button" data-size="1x1">1:1<small>1080×1080</small></button>
+          <button id="exportPortraitBtn" type="button" data-size="4x5">4:5<small>1080×1350</small></button>
+          <button id="exportWideBtn" type="button" data-size="16x9">16:9<small>1920×1080</small></button>
+        </div>
+        <button id="exportAllBtn" type="button" class="primary">⬇ Export all 3 PNGs</button>
+      </section>
+    </aside>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

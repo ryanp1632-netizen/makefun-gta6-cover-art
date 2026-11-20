@@ -1,23 +1,46 @@
-// A working gta6-cover-art-01 entry (Node 22, standard library only): the app is this directory's app/ folder, plain
-// static files a desktop browser loads offline (app/index.html and its ES modules, no library and no network
-// request), and the program hands it in. It copies app/ and screenshots/ from beside this file to /output and writes
-// /output/dossier.json, the summary the judge reads, with the vendored make.fun library. Only the plumbing, not the
-// cover art the bounty asks for: Cover Snap, a plain one-photo square cover with a sunset tint and a bold caption,
-// exported as a 1080 x 1080 PNG. Its two sample photos (app/samples/) were made for make.fun with an image model and
-// are free to use. Build your own GTA-style cover maker in its place, put your 3 or 4 PNG or JPEG screenshots in
-// screenshots/ (the first by name is the cover) and run it.
+// Golden Mile Cover Studio — entry for make.fun's gta6-cover-art-01 bounty (Node 22, standard library only).
+//
+// The app lives in app/: plain static files (index.html, style.css and ES modules under app/src/) that desktop
+// Chrome opens offline, with no build step, no library and no network request. It turns the user's own photos into
+// a crime-epic cast poster — a mosaic of slanted photo panels, each framed on a face, a chunky sunset-gradient title
+// with a 3D extrude, a neon script subtitle, tagline ribbon, review quote, seal, barcode and billing block — and
+// exports it as PNG at 1080x1080, 1080x1350 and 1920x1080. Fonts are SIL OFL / Apache 2.0 files in app/fonts/; the
+// demo cast in app/samples/ is AI-generated (see app/samples/PHOTOS.md) and shows no real person.
+//
+// This program hands the entry in: it copies app/ and screenshots/ from beside this file to the output directory
+// and writes dossier.json, the summary the judge reads, with the vendored make.fun library.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+//   MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-app.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+// Sanity checks: refuse to hand in an entry that is missing its pieces.
+function refuse(reason: string): never {
+  console.error(`main.ts: refusing to run: ${reason}`);
+  process.exit(1);
+}
+
+const shotsDir = join(here, 'screenshots');
+const shots = existsSync(shotsDir) ? readdirSync(shotsDir).filter((name) => /\.(jpe?g|png)$/i.test(name)) : [];
+if (shots.length < 3 || shots.length > 4) refuse(`screenshots/ must hold 3 or 4 .jpg/.png files, found ${shots.length}`);
+
+if (!existsSync(join(here, 'app', 'index.html'))) refuse('app/index.html is missing');
+
+const castDir = join(here, 'app', 'samples', 'cast');
+const cast = existsSync(castDir) ? readdirSync(castDir).filter((name) => /\.jpg$/i.test(name)) : [];
+if (cast.length !== 6) refuse(`app/samples/cast/ must hold 6 .jpg demo cast photos, found ${cast.length}`);
+for (const name of cast) {
+  const bytes = statSync(join(castDir, name)).size;
+  if (bytes > 200 * 1024) refuse(`app/samples/cast/${name} is ${bytes} bytes, over the 200 KB cap`);
+}
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'app'), join(out, 'app'), { recursive: true });

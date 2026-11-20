@@ -84,6 +84,8 @@ const SKY_PALETTES = {
   },
 };
 
+export const SKY_PALETTES_FOR_SUN = SKY_PALETTES;
+
 export const SKY_MOOD_FOR_GRADE = {
   sunsetGold: 'gold', neonNight: 'neon', tropicTeal: 'teal', ultraviolet: 'violet', retroPrint: 'print',
 };
@@ -311,6 +313,38 @@ export function drawTitleGlow(ctx, glow, color) {
   ctx.beginPath();
   ctx.arc(0, 0, ry * 0.8, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
+
+const BACKDROP_PALETTES = {
+  gold: { stops: ['#12051c', '#2c0a33', '#6a1748', '#a8323f', '#3a0d2e', '#0f0418'], glow: [255, 120, 50] },
+  neon: { stops: ['#04031a', '#14093e', '#45127a', '#9a1a86', '#22094a', '#04031a'], glow: [255, 60, 200] },
+  teal: { stops: ['#021a20', '#06323c', '#0f5a5e', '#b0603e', '#0a3640', '#021a20'], glow: [255, 170, 90] },
+  violet: { stops: ['#0b0220', '#22074a', '#56128a', '#a52d8f', '#2a0a52', '#0b0220'], glow: [220, 90, 255] },
+  print: { stops: ['#1a0905', '#3a140a', '#7a2a14', '#b54a22', '#3a140a', '#1a0905'], glow: [255, 150, 70] },
+};
+
+/**
+ * The poster ground the framed panels sit on: a dark sunset gradient that warms toward the title line, with a soft
+ * glow behind it, so the gutters between panels read as dusk sky and the panels' drop shadows show.
+ */
+export function drawPosterBackdrop(ctx, W, H, mood = 'gold', glowY = H * 0.5) {
+  const p = BACKDROP_PALETTES[mood] || BACKDROP_PALETTES.gold;
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  const at = [0, 0.18, Math.max(0.3, glowY / H - 0.08), Math.min(0.7, glowY / H + 0.02), Math.min(0.86, glowY / H + 0.22), 1];
+  p.stops.forEach((c, i) => g.addColorStop(at[i], c));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  const [r, gg, b] = p.glow;
+  ctx.save();
+  ctx.translate(W / 2, glowY);
+  ctx.scale(W / H, 1);
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, H * 0.55);
+  glow.addColorStop(0, `rgba(${r},${gg},${b},0.42)`);
+  glow.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+  ctx.globalCompositeOperation = 'screen';
+  ctx.fillStyle = glow;
+  ctx.fillRect(-H, -H, H * 2, H * 2);
   ctx.restore();
 }
 

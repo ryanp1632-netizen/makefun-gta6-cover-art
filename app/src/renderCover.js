@@ -1,18 +1,21 @@
 // renderCover: composes one poster onto a canvas of any pixel size. Order of work:
-//   backdrop (sky, sun, skyline, palms) -> panels (drop shadow, smart-cropped + auto-exposed photo, light frame)
-//   -> whole-poster colour grade (pixels, bloom, light leaks) -> title glow and bottom shade
-//   -> lettering (billing, barcode, quote, release line, seal, ribbon, title, neon script, name tags, sparkles, flare).
+//   dark sunset backdrop (+ sky, sun, skyline, palms) -> panels (soft drop shadow, smart-cropped, auto-exposed and
+//   face-sharpened photo) -> whole-poster colour grade (pixels with skin protection, shared film grain, bloom, light
+//   leaks) -> warm-white keyline frames -> title glow and bottom shade -> lettering (review top bar, billing, barcode,
+//   release line, seal, ribbon, title, neon script, name tags, sparkles, flare).
 // It returns a report with every panel's polygon, face rect and name-tag rect, plus all lettering rects, which the
 // editor uses for hit-testing and the test hook uses to prove no lettering covers a face.
 
 import { getLayout, pointInPolygon, innerRect } from './layouts.js';
 import { GRADES, applyGradeByKey, autoExposePanel } from './grades.js';
+import { sharpenFaceArea } from './photoFinish.js';
 import { frameHeadAndShoulders, drawFramedPhoto } from './smartCrop.js';
 import {
-  drawSunsetSky, drawPalmSilhouette, drawSkyline, drawTitleGlow, drawLensFlare, drawEmptyPanelArt, SKY_MOOD_FOR_GRADE,
+  drawSunsetSky, drawPalmSilhouette, drawSkyline, drawTitleGlow, drawLensFlare, drawEmptyPanelArt, drawPosterBackdrop,
+  drawStripedSun, SKY_MOOD_FOR_GRADE, SKY_PALETTES_FOR_SUN,
 } from './decor.js';
 import {
-  drawChromeTitle, drawTitleSparkles, drawNeonScript, drawTaglineRibbon, drawNameTag, measureNameTag, drawReviewQuote,
+  drawChromeTitle, drawTitleSparkles, drawNeonScript, drawTaglineRibbon, drawNameTag, measureNameTag, drawReviewTopBar,
   drawSealBadge, drawBarcode, drawBillingBlock, drawReleaseLine, withAlpha,
 } from './lettering.js';
 import { TITLE_FONTS, SCRIPT_FONTS } from './fonts.js';
@@ -44,7 +47,9 @@ export function renderPanelImage(panel, photo, slot, scale) {
   drawFramedPhoto(g, photo, frame, bbox.w, bbox.h);
   const img = g.getImageData(0, 0, c.width, c.height);
   const f = frame.face;
-  autoExposePanel(img, f ? { x: f.x * scale, y: f.y * scale, w: f.w * scale, h: f.h * scale } : null);
+  const faceDev = f ? { x: f.x * scale, y: f.y * scale, w: f.w * scale, h: f.h * scale } : null;
+  autoExposePanel(img, faceDev);
+  sharpenFaceArea(img, faceDev, 0.75);
   g.putImageData(img, 0, 0);
   const result = { canvas: c, frame };
   panelCache.set(key, result);
@@ -58,6 +63,70 @@ function tracePolygon(ctx, poly) {
   ctx.closePath();
 }
 
+/** The soft drop shadow a framed still casts on the poster ground. */
+export function drawPanelShadow(ctx, poly, W, scale, bg) {
+  const k = W / 1920;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.82)';
+  ctx.shadowBlur = 34 * k * scale;
+  ctx.shadowOffsetX = 5 * k * scale;
+  ctx.shadowOffsetY = 12 * k * scale;
+  ctx.fillStyle = bg;
+  tracePolygon(ctx, poly);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Fade a panel's lower part into the poster's dusk colour, where the title stack sits on it; with fade.sun, a
+ * striped sunset rises from the panel's bottom edge behind the script.
+ */
+export function drawPanelFade(ctx, panel, bg, mood) {
+  const { y0, y1, strength, sun } = panel.fade;
+  const g = ctx.createLinearGradient(0, y0, 0, y1);
+  g.addColorStop(0, withAlpha(bg, 0));
+  g.addColorStop(0.45, withAlpha(bg, strength * 0.6));
+  g.addColorStop(1, withAlpha(bg, strength));
+  ctx.fillStyle = g;
+  ctx.fillRect(panel.bbox.x, y0, panel.bbox.w, y1 - y0);
+  if (sun) {
+    ctx.save();
+    ctx.globalAlpha = sun.alpha ?? 0.9;
+    drawStripedSun(ctx, sun.cx, sun.cy, sun.r, SKY_PALETTES_FOR_SUN[mood]);
+    ctx.restore();
+    const haze = ctx.createLinearGradient(0, sun.cy - sun.r * 0.2, 0, y1);
+    haze.addColorStop(0, withAlpha(bg, 0));
+    haze.addColorStop(1, withAlpha(bg, 0.55));
+    ctx.fillStyle = haze;
+    ctx.fillRect(panel.bbox.x, sun.cy - sun.r * 0.2, panel.bbox.w, y1 - sun.cy + sun.r * 0.2);
+  }
+}
+
+/**
+ * A thin warm-white keyline around a panel, with a faint dark matte just inside it, so each photo reads as a
+ * deliberately framed still. Drawn after the grade so the line stays crisp.
+ */
+export function drawPanelKeyline(ctx, poly, color, W, hero) {
+  const lw = Math.max(2, W / 680) * (hero ? 1.25 : 1);
+  ctx.save();
+  tracePolygon(ctx, poly);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(10,0,20,0.42)';
+  ctx.lineWidth = lw * 4.2;
+  ctx.lineJoin = 'miter';
+  tracePolygon(ctx, poly);
+  ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.96;
+  ctx.lineWidth = lw;
+  ctx.lineJoin = 'miter';
+  tracePolygon(ctx, poly);
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function rectsOverlap(a, b, pad = 0) {
   return a && b && a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
 }
@@ -69,8 +138,10 @@ function overlapArea(a, b) {
 }
 
 /** Find a spot for a name tag inside its panel that covers neither the face nor any lettering. */
-export function placeNameTag(ctx, text, panel, faceAbs, avoid, baseSize, W, H) {
+export function placeNameTag(ctx, text, panel, faceRect, avoid, baseSize, W, H) {
   const b = panel.bbox;
+  // Keep clear of the jaw and beard too: the tag treats the face as reaching a little further down.
+  const faceAbs = faceRect ? { ...faceRect, h: faceRect.h * 1.22 } : null;
   // Shrink the tag to fit narrow panels.
   const narrowest = innerRect(panel.poly, b.y + b.h * 0.1, b.y + b.h * 0.9, 0).w;
   let size = baseSize;
@@ -108,7 +179,8 @@ export function placeNameTag(ctx, text, panel, faceAbs, avoid, baseSize, W, H) {
     const s = spanFor(c.y);
     const fits = c.x >= s.x - 1 && c.x + w <= s.x + s.w + 1;
     let cost = (inside ? 0 : 1e6) + (fits ? 0 : 5e5);
-    if (faceAbs) cost += overlapArea(rect, { x: faceAbs.x - 6, y: faceAbs.y - 6, w: faceAbs.w + 12, h: faceAbs.h + 12 }) * 50;
+    if (faceRect) cost += overlapArea(rect, { x: faceRect.x - 6, y: faceRect.y - 6, w: faceRect.w + 12, h: faceRect.h + 12 }) * 50;
+    if (faceAbs) cost += overlapArea(rect, faceAbs) * 4;
     for (const r of avoid) if (r) cost += overlapArea(rect, r) * 10;
     if (!best || cost < best.cost) best = { ...c, rect, cost, size };
     if (cost === 0) break;
@@ -142,9 +214,8 @@ export function renderCover(canvas, doc, photos, sizeKey) {
   ctx.clearRect(0, 0, pw, ph);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
-  // 1. Backdrop.
-  ctx.fillStyle = pal.bg;
-  ctx.fillRect(0, 0, W, H);
+  // 1. Backdrop: a dark sunset ground, plus the layout's sunset scene where it has one.
+  drawPosterBackdrop(ctx, W, H, mood, layout.title.cy);
   if (layout.sky) {
     const sky = layout.sky;
     drawSunsetSky(ctx, { x: 0, y: sky.y, w: W, h: sky.h }, sky.horizon, sky.sunX, sky.sunR, mood);
@@ -159,14 +230,7 @@ export function renderCover(canvas, doc, photos, sizeKey) {
   layout.panels.forEach((panel, i) => {
     const slot = doc.panels[i] || {};
     const photo = slot.photoId ? photos.get(slot.photoId) : null;
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.75)';
-    ctx.shadowBlur = 26 * scale;
-    ctx.shadowOffsetY = 8 * scale;
-    ctx.fillStyle = pal.bg;
-    tracePolygon(ctx, panel.poly);
-    ctx.fill();
-    ctx.restore();
+    drawPanelShadow(ctx, panel.poly, W, scale, pal.bg);
     ctx.save();
     tracePolygon(ctx, panel.poly);
     ctx.clip();
@@ -186,14 +250,7 @@ export function renderCover(canvas, doc, photos, sizeKey) {
     edge.addColorStop(1, 'rgba(10,0,20,0.32)');
     ctx.fillStyle = edge;
     ctx.fillRect(panel.bbox.x, panel.bbox.y, panel.bbox.w, panel.bbox.h);
-    ctx.restore();
-    ctx.save();
-    ctx.strokeStyle = pal.frame;
-    ctx.globalAlpha = 0.92;
-    ctx.lineWidth = Math.max(2.5, W / 640);
-    ctx.lineJoin = 'miter';
-    tracePolygon(ctx, panel.poly);
-    ctx.stroke();
+    if (panel.fade) drawPanelFade(ctx, panel, pal.bg, mood);
     ctx.restore();
     report.panels.push({
       index: i, poly: panel.poly, bbox: panel.bbox, zone: panel.zone, hero: panel.hero, photoId: photo ? photo.id : null,
@@ -205,6 +262,7 @@ export function renderCover(canvas, doc, photos, sizeKey) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   applyGradeByKey(grade.key, ctx, pw, ph, scale);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  for (const panel of layout.panels) drawPanelKeyline(ctx, panel.poly, pal.frame, W, panel.hero);
 
   // 4. Title glow and bottom shade.
   if (layout.shade) {
@@ -223,7 +281,7 @@ export function renderCover(canvas, doc, photos, sizeKey) {
   const push = (kind, r) => r && rects.push({ kind, ...r });
   if (layout.billing) push('billing', drawBillingBlock(ctx, cap.billing, layout.billing.cx, layout.billing.y, layout.billing.w, layout.billing.h, '#f6ecdc'));
   if (layout.barcode && layout.barcode.w) push('barcode', drawBarcode(ctx, layout.barcode.x, layout.barcode.y, layout.barcode.w, layout.barcode.h, cap.title));
-  if (layout.quote) push('quote', drawReviewQuote(ctx, cap.quote, cap.quoteSource, layout.quote.cx, layout.quote.cy, layout.quote.w, pal));
+  if (layout.topBar) push('topbar', drawReviewTopBar(ctx, cap.quote, cap.quoteSource, cap.edition, layout.topBar, pal));
   if (layout.release) push('release', drawReleaseLine(ctx, cap.release, layout.release.cx, layout.release.cy, layout.release.size, pal));
   if (layout.ribbon) push('ribbon', drawTaglineRibbon(ctx, cap.tagline, layout.ribbon.cx, layout.ribbon.cy, layout.ribbon.h, layout.ribbon.maxW, pal));
   const title = drawChromeTitle(ctx, cap.title, layout.title, titleFamily, pal);

@@ -26,6 +26,7 @@ export const DEFAULT_CAPTION = {
   seal: 'Best Cast',
   sealRing: 'Golden Mile Film Festival ★ Official Selection',
   release: 'Coming Soon',
+  edition: 'Vol. 1',
   autoTags: true,
   tags: Array(MAX_PANELS).fill(''),
 };
@@ -546,7 +547,7 @@ function installDropAndPaste() {
 const CAPTION_FIELDS = [
   ['titleInput', 'title'], ['subtitleInput', 'subtitle'], ['taglineInput', 'tagline'], ['quoteInput', 'quote'],
   ['quoteSourceInput', 'quoteSource'], ['billingInput', 'billing'], ['sealInput', 'seal'], ['sealRingInput', 'sealRing'],
-  ['releaseInput', 'release'],
+  ['releaseInput', 'release'], ['editionInput', 'edition'],
 ];
 
 function installCaptionFields() {

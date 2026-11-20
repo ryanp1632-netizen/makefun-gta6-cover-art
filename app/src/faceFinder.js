@@ -163,13 +163,97 @@ export function findFaceBox(source, srcW, srcH, maps = buildSaliencyMaps(source,
     const fw = srcW * 0.3;
     return { x: srcW * 0.5 - fw / 2, y: srcH * 0.18, w: fw, h: fw * 1.28, confidence: 0 };
   }
+  const fitted = fitFaceBoxToSkin(maps, { x: best.x, y: best.y, w: best.fw, h: best.fh });
   return {
-    x: best.x * scale,
-    y: best.y * scale,
-    w: best.fw * scale,
-    h: best.fh * scale,
+    x: fitted.x * scale,
+    y: fitted.y * scale,
+    w: fitted.w * scale,
+    h: fitted.h * scale,
     confidence: Math.min(1, best.score * 4),
   };
+}
+
+/**
+ * Snap a face box (work-map pixels) to the skin region around it: grow a side while the strip just outside it is
+ * still face skin (a close-up whose box caught only the cheeks), shrink a side while its edge strip is mostly hair or
+ * background (a box that took in the hair). The result runs about hairline to chin and cheek to cheek, which keeps
+ * head-size estimates honest for tight close-ups and loose waist-up shots alike.
+ */
+export function fitFaceBoxToSkin(maps, box) {
+  const { w, h, skin, lum } = maps;
+  let x0 = box.x;
+  let y0 = box.y;
+  let x1 = box.x + box.w;
+  let y1 = box.y + box.h;
+  const avg = (map, ax0, ay0, ax1, ay1) => {
+    let s = 0;
+    let n = 0;
+    const xa = Math.max(0, Math.floor(ax0));
+    const xb = Math.min(w, Math.ceil(ax1));
+    for (let y = Math.max(0, Math.floor(ay0)); y < Math.min(h, Math.ceil(ay1)); y++) {
+      for (let x = xa; x < xb; x++) { s += map[y * w + x]; n++; }
+    }
+    return n ? s / n : 0;
+  };
+  // Reference: skin level and brightness in the middle of the box (eyes to mouth).
+  const cx0 = x0 + Math.round(box.w * 0.25);
+  const cy0 = y0 + Math.round(box.h * 0.3);
+  const cx1 = x1 - Math.round(box.w * 0.25);
+  const cy1 = y1 - Math.round(box.h * 0.2);
+  const ref = Math.max(0.2, avg(skin, cx0, cy0, cx1, cy1));
+  const refLum = avg(lum, cx0, cy0, cx1, cy1);
+  const mean = (ax0, ay0, ax1, ay1) => avg(skin, ax0, ay0, ax1, ay1);
+  // Above the face, a strip counts only if it is also about as bright as the face (forehead, not a bright sky).
+  const meanAbove = (ax0, ay0, ax1, ay1) => {
+    const s = avg(skin, ax0, ay0, ax1, ay1);
+    const l = avg(lum, ax0, ay0, ax1, ay1);
+    return Math.abs(l - refLum) < refLum * 0.25 + 10 ? s : s * 0.5;
+  };
+  // Only a box whose middle is clearly skin may grow (sunglasses or shade in the middle mean the box is unreliable
+  // for growing and is only trimmed).
+  const grow = ref >= 0.45 ? Math.max(0.4, ref * 0.82) : Infinity;
+  const keep = ref * 0.3;
+  const maxW = Math.min(w, box.w * 1.6);
+  const maxH = Math.min(h * 0.7, box.h * 1.6);
+  const maxY1 = box.y + box.h * 1.18;
+  const minW = Math.max(4, box.w * 0.62);
+  const minH = Math.max(4, box.h * 0.7);
+  for (let iter = 0; iter < 60; iter++) {
+    let changed = false;
+    const bw = x1 - x0;
+    const bh = y1 - y0;
+    // Grow toward skin only where the box edge itself still lies on skin (the box cuts through the face): sideways
+    // and up within the caps, down only a little, since the neck is skin too.
+    const yMid = y1 - bh * 0.25;
+    if (x0 > 0 && bw < maxW && mean(x0, y0, x0 + 1, yMid) > grow && mean(x0 - 1, y0, x0, yMid) > grow) { x0--; changed = true; }
+    if (x1 < w && bw < maxW && mean(x1 - 1, y0, x1, yMid) > grow && mean(x1, y0, x1 + 1, yMid) > grow) { x1++; changed = true; }
+    const xa = x0 + bw * 0.2;
+    const xb = x1 - bw * 0.2;
+    if (y0 > 0 && bh < maxH && mean(xa, y0, xb, y0 + 1) > grow && meanAbove(xa, y0 - 1, xb, y0) > grow) { y0--; changed = true; }
+    if (y1 < h && y1 < maxY1 && bh < maxH && mean(xa, y1 - 1, xb, y1) > grow && mean(xa, y1, xb, y1 + 1) > grow) { y1++; changed = true; }
+    // Trim hair and background off the sides and the top.
+    if (bw > minW && mean(x0, y0, x0 + 1, y1) < keep) { x0++; changed = true; }
+    if (bw > minW && mean(x1 - 1, y0, x1, y1) < keep) { x1--; changed = true; }
+    if (bh > minH && mean(x0, y0, x1, y0 + 1) < keep) { y0++; changed = true; }
+    if (!changed) break;
+  }
+  x0 = Math.round(x0); x1 = Math.round(x1); y0 = Math.round(y0); y1 = Math.round(y1);
+  // Keep a face-like shape: not wider than tall by much, not a thin sliver.
+  let bw = x1 - x0;
+  let bh = y1 - y0;
+  if (bh < bw * 1.05) {
+    const add = bw * 1.05 - bh;
+    y1 = Math.min(h, y1 + add * 0.6);
+    y0 = Math.max(0, y0 - add * 0.4);
+    bh = y1 - y0;
+  }
+  if (bw < bh * 0.62) {
+    const add = bh * 0.62 - bw;
+    x0 = Math.max(0, x0 - add / 2);
+    x1 = Math.min(w, x1 + add / 2);
+    bw = x1 - x0;
+  }
+  return { x: x0, y: y0, w: bw, h: bh };
 }
 
 /**

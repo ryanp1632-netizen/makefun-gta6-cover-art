@@ -54,7 +54,7 @@ export function installTestHook(api) {
         ctx.fillRect(x, y, 150, 20);
         ctx.fillStyle = '#fff';
         ctx.font = '14px sans-serif';
-        ctx.fillText(`${p.tag} q=${p.quality.toFixed(2)} c=${p.face.confidence.toFixed(2)}`, x + 4, y + 15);
+        ctx.fillText(`${p.tag} q=${p.quality.toFixed(2)} h=${((p.face.h * 1.8) / p.h).toFixed(2)}`, x + 4, y + 15);
       });
       return c.toDataURL('image/jpeg', 0.85);
     },

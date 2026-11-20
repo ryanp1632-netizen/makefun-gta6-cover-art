@@ -1,18 +1,21 @@
 // Colour grading on pixel data. Two stages:
 //   1. autoExposePanel — per panel, before grading: levels stretch + face-weighted gamma + dehaze, so a dark or hazy
-//      photo never looks muddy and faces stay bright.
+//      photo never looks muddy and faces stay bright (renderCover then sharpens the face area).
 //   2. applyColourGrade — over the whole poster: tone curve (lift/gamma/gain), contrast S-curve, saturation, split
 //      toning (shadows / highlights), vignette, halftone dots, film grain; then bloom and light leaks on the canvas.
-// The five named grades are thin wrappers so each look can be read on its own.
+// The five named grades are thin wrappers so each look can be read on its own. Skin-like pixels keep their own warm
+// hue under every grade (see photoFinish.js), and one shared film grain goes over the whole poster.
+
+import { skinToneWeight, addFilmGrain } from './photoFinish.js';
 
 export const GRADES = {
   sunsetGold: {
     key: 'sunsetGold', label: 'Sunset Gold',
-    lift: [0.035, 0.0, 0.06], gamma: [0.95, 1.02, 1.12], gain: [1.06, 1.0, 0.9],
-    contrast: 0.34, saturation: 1.26, vibrance: 0.25,
+    lift: [0.02, 0.0, 0.045], gamma: [0.95, 1.02, 1.12], gain: [1.07, 1.0, 0.9],
+    contrast: 0.4, saturation: 1.24, vibrance: 0.25,
     shadowTint: [0.62, 0.12, 0.6], highlightTint: [1.0, 0.72, 0.32], toneAmount: 0.2,
     vignette: 0.46, grain: 0.035, halftone: 0,
-    bloom: { threshold: 0.72, amount: 0.42, radius: 0.018, tint: [1.0, 0.7, 0.4] },
+    bloom: { threshold: 0.76, amount: 0.3, radius: 0.016, tint: [1.0, 0.7, 0.4] },
     leaks: [
       { x: 1.02, y: -0.05, r: 0.42, color: [255, 150, 40], alpha: 0.26 },
       { x: -0.05, y: 1.05, r: 0.45, color: [255, 40, 130], alpha: 0.28 },
@@ -183,17 +186,6 @@ function buildToneLut(grade, channel) {
   return lut;
 }
 
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 /** Grade pixels in place. `scale` is output px per design px (keeps grain and dots consistent across sizes). */
 export function applyColourGrade(imageData, grade, scale = 1) {
   const { data, width, height } = imageData;
@@ -206,9 +198,8 @@ export function applyColourGrade(imageData, grade, scale = 1) {
   const [hr, hg, hb] = grade.highlightTint;
   const amt = grade.toneAmount;
   const vig = grade.vignette;
-  const grain = grade.grain * 255;
   const half = grade.halftone;
-  const rand = mulberry32(1337);
+  const skinKeep = grade.skinKeep ?? 0.6;
   const cx = width / 2;
   const cy = height / 2;
   const maxD = Math.sqrt(cx * cx + cy * cy);
@@ -219,9 +210,12 @@ export function applyColourGrade(imageData, grade, scale = 1) {
     const dy = (y - cy) / maxD;
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
-      let r = lr[data[i]];
-      let g = lg[data[i + 1]];
-      let b = lb[data[i + 2]];
+      const r0 = data[i];
+      const g0 = data[i + 1];
+      const b0 = data[i + 2];
+      let r = lr[r0];
+      let g = lg[g0];
+      let b = lb[b0];
       const l = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
       // Saturation with vibrance (muted colours gain more).
       const mx = Math.max(r, g, b);
@@ -238,6 +232,19 @@ export function applyColourGrade(imageData, grade, scale = 1) {
       r += (sr * 255 - 128) * ws + (hr * 255 - 128) * wh;
       g += (sg * 255 - 128) * ws + (hg * 255 - 128) * wh;
       b += (sb * 255 - 128) * ws + (hb * 255 - 128) * wh;
+      // Skin protection: on skin-like pixels, keep the graded brightness but bring back the photo's own warm hue,
+      // so no grade turns faces grey, green or magenta.
+      const sw = skinToneWeight(r0, g0, b0) * skinKeep;
+      if (sw > 0.01) {
+        const l0 = 0.299 * r0 + 0.587 * g0 + 0.114 * b0;
+        const lg2 = Math.max(l0 * 0.92, 0.299 * r + 0.587 * g + 0.114 * b);
+        const pr = lg2 + (r0 - l0) * 1.12 + 6;
+        const pg = lg2 + (g0 - l0) * 1.12 + 1;
+        const pb = lg2 + (b0 - l0) * 1.12 - 5;
+        r += (pr - r) * sw;
+        g += (pg - g) * sw;
+        b += (pb - b) * sw;
+      }
       // Vignette.
       const dx = (x - cx) / maxD;
       const d2 = dx * dx * 0.8 + dy * dy * 1.2;
@@ -258,12 +265,6 @@ export function applyColourGrade(imageData, grade, scale = 1) {
           g *= 1 - half * 1.05;
           b *= 1 - half * 1.1;
         }
-      }
-      if (grain > 0) {
-        const n = (rand() - 0.5) * grain;
-        r += n;
-        g += n;
-        b += n;
       }
       data[i] = clamp255(r);
       data[i + 1] = clamp255(g);
@@ -328,6 +329,7 @@ export function applyLightLeaks(ctx, grade, pw, ph) {
 export function gradeCanvas(ctx, grade, pw, ph, scale) {
   const img = ctx.getImageData(0, 0, pw, ph);
   applyColourGrade(img, grade, scale);
+  addFilmGrain(img, grade.grain * Math.min(1, Math.max(0.35, scale)));
   ctx.putImageData(img, 0, 0);
   applyBloom(ctx, grade, pw, ph);
   applyLightLeaks(ctx, grade, pw, ph);

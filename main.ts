@@ -1,11 +1,13 @@
-// Golden Mile Cover Studio — entry for make.fun's gta6-cover-art-01 bounty (Node 22, standard library only).
+// Golden Mile Cover Studio v4 — entry for make.fun's gta6-cover-art-01 bounty (Node 22, standard library only).
 //
 // The app lives in app/: plain static files (index.html, style.css and ES modules under app/src/) that desktop
 // Chrome opens offline, with no build step, no library and no network request. It turns the user's own photos into
-// a crime-epic cast poster — a mosaic of slanted photo panels, each framed on a face, a chunky sunset-gradient title
-// with a 3D extrude, a neon script subtitle, tagline ribbon, review quote, seal, barcode and billing block — and
-// exports it as PNG at 1080x1080, 1080x1350 and 1920x1080. Fonts are SIL OFL / Apache 2.0 files in app/fonts/; the
-// demo cast in app/samples/ is AI-generated (see app/samples/PHOTOS.md) and shows no real person.
+// a crime-epic cast poster — a hero mosaic of one big hero panel and six cast panels, each cropped on a face and
+// framed with a warm-white keyline and a soft drop shadow, a review top bar with stars and an edition tag, a chunky
+// sunset-gradient title with a 3D extrude, a neon script subtitle over a striped sunset, tagline ribbon, seal,
+// barcode and billing block, with per-panel photo finishing (auto-exposure, face sharpening, skin-safe grade, shared
+// film grain) — and exports it as PNG at 1080x1080, 1080x1350 and 1920x1080. Fonts are SIL OFL / Apache 2.0 files
+// in app/fonts/; the demo cast in app/samples/ is AI-generated (see app/samples/PHOTOS.md) and shows no real person.
 //
 // This program hands the entry in: it copies app/ and screenshots/ from beside this file to the output directory
 // and writes dossier.json, the summary the judge reads, with the vendored make.fun library.

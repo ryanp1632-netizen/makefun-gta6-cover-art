@@ -1,7 +1,8 @@
 // All poster lettering, drawn by hand on Canvas 2D: the giant chrome-sunset title (gradient fill, thick dark outline,
 // light rim, offset 3D extrude, horizontal stripe cuts, gloss and sparkles, auto-fit to its box), the neon script
-// subtitle, tagline ribbon, name tags, review quote with stars and laurels, round seal badge, barcode, billing block
-// and release line. Every function works in design pixels and returns the rectangle it covered.
+// subtitle, tagline ribbon, name tags, the review top bar (stars, quote, source, boxed edition tag), round seal
+// badge, barcode, billing block and release line. Every function works in design pixels and returns the rectangle it
+// covered.
 
 import { fontString, UI_FONT } from './fonts.js';
 import { drawSparkle } from './decor.js';
@@ -370,138 +371,109 @@ export function drawStars(ctx, cx, cy, r, count, color) {
   ctx.restore();
 }
 
-/** An almond-shaped leaf from the origin along +x. */
-function leafPath(ctx, len, width) {
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.quadraticCurveTo(len * 0.45, -width, len, 0);
-  ctx.quadraticCurveTo(len * 0.45, width, 0, 0);
-  ctx.closePath();
+/** Fit a label into maxW by shrinking its size; returns the size used. */
+function fitLabelSize(ctx, label, size, maxW, spacing) {
+  ctx.font = fontString(size, UI_FONT);
+  ctx.letterSpacing = `${(size * spacing).toFixed(2)}px`;
+  const w = ctx.measureText(label).width;
+  return w > maxW ? (size * maxW) / w : size;
 }
 
 /**
- * One laurel branch centred on (cx, cy) and `height` tall: a curved stem bulging outward with paired almond leaves
- * that shrink toward the tip. side = -1 draws the left branch "(", side = 1 the mirrored right branch ")".
+ * The review top bar above the panels: a dark band with a gold hairline, five stars, the review quote in quotation
+ * marks and its source on the left, and a small boxed edition tag ("VOL. 1") on the right. It keeps the quote off
+ * the photos. bar = {x, y, w, h, pad}.
  */
-export function drawLaurel(ctx, cx, cy, height, side, color) {
-  const h = height;
-  const B = [h * 0.16, h * 0.5];
-  const C = [-h * 0.38, h * 0.2];
-  const T = [-h * 0.02, -h * 0.5];
-  const at = (t) => [
-    (1 - t) * (1 - t) * B[0] + 2 * (1 - t) * t * C[0] + t * t * T[0],
-    (1 - t) * (1 - t) * B[1] + 2 * (1 - t) * t * C[1] + t * t * T[1],
-  ];
-  const tangent = (t) => {
-    const dx = 2 * (1 - t) * (C[0] - B[0]) + 2 * t * (T[0] - C[0]);
-    const dy = 2 * (1 - t) * (C[1] - B[1]) + 2 * t * (T[1] - C[1]);
-    return Math.atan2(dy, dx);
-  };
-  ctx.save();
-  ctx.translate(cx, cy);
-  if (side > 0) ctx.scale(-1, 1);
-  ctx.fillStyle = color;
-  ctx.strokeStyle = color;
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = h * 0.06 * devScale(ctx);
-  ctx.lineWidth = h * 0.022;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(B[0], B[1]);
-  ctx.quadraticCurveTo(C[0], C[1], T[0], T[1]);
-  ctx.stroke();
-  const pairs = 7;
-  for (let i = 0; i < pairs; i++) {
-    const t = 0.1 + (i / pairs) * 0.84;
-    const [px, py] = at(t);
-    const a = tangent(t);
-    const len = h * (0.2 - t * 0.08);
-    for (const s of [-1, 1]) {
-      ctx.save();
-      ctx.translate(px, py);
-      ctx.rotate(a + s * 0.62);
-      leafPath(ctx, len, len * 0.3);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-  const [tx, ty] = at(1);
-  ctx.save();
-  ctx.translate(tx, ty);
-  ctx.rotate(tangent(1));
-  leafPath(ctx, h * 0.13, h * 0.04);
-  ctx.fill();
-  ctx.restore();
-  ctx.restore();
-}
-
-/** Review quote with five stars, laurels on both sides and the source underneath. */
-export function drawReviewQuote(ctx, quote, source, cx, cy, w, pal) {
-  if (!quote && !source) return null;
-  const qSize = w * 0.075;
-  ctx.save();
-  ctx.font = fontString(qSize, UI_FONT);
-  ctx.letterSpacing = `${(qSize * 0.06).toFixed(2)}px`;
-  const lines = wrapText(ctx, `“${String(quote || '').toUpperCase()}”`, w * 0.66);
-  const textW = Math.max(...lines.map((l) => ctx.measureText(l).width), w * 0.4);
-  ctx.restore();
-  const starR = w * 0.032;
-  const blockH = starR * 2.6 + lines.length * qSize * 1.08 + qSize * 0.9;
-  let y = cy - blockH / 2;
+export function drawReviewTopBar(ctx, quote, source, edition, bar, pal) {
+  const { x, y, w, h } = bar;
+  const pad = bar.pad ?? h * 0.45;
   const gold = pal.seal[0];
-  // Soft dark backing so the quote reads over any photo.
+  const scale = devScale(ctx);
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(1, (blockH * 0.95) / (w * 0.62));
-  const back = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.62);
-  back.addColorStop(0, 'rgba(10,2,18,0.62)');
-  back.addColorStop(0.6, 'rgba(10,2,18,0.4)');
-  back.addColorStop(1, 'rgba(10,2,18,0)');
-  ctx.fillStyle = back;
-  ctx.beginPath();
-  ctx.arc(0, 0, w * 0.62, 0, Math.PI * 2);
-  ctx.fill();
+  const band = ctx.createLinearGradient(0, y, 0, y + h);
+  band.addColorStop(0, withAlpha(pal.bg, 0.98));
+  band.addColorStop(1, withAlpha(pal.bg, 0.9));
+  ctx.fillStyle = band;
+  ctx.fillRect(x, y, w, h);
+  const rule = ctx.createLinearGradient(x, 0, x + w, 0);
+  rule.addColorStop(0, withAlpha(gold, 0));
+  rule.addColorStop(0.18, withAlpha(gold, 0.85));
+  rule.addColorStop(0.82, withAlpha(gold, 0.85));
+  rule.addColorStop(1, withAlpha(gold, 0));
+  ctx.fillStyle = rule;
+  ctx.fillRect(x, y + h - Math.max(1.5, h * 0.035), w, Math.max(1.5, h * 0.035));
   ctx.restore();
-  drawStars(ctx, cx, y + starR, starR, 5, gold);
-  y += starR * 2.7;
-  ctx.save();
-  ctx.font = fontString(qSize, UI_FONT);
-  ctx.letterSpacing = `${(qSize * 0.06).toFixed(2)}px`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(0,0,0,0.7)';
-  ctx.shadowBlur = qSize * 0.4 * devScale(ctx);
-  for (const line of lines) {
-    ctx.fillText(line, cx, y);
-    y += qSize * 1.08;
-  }
-  const sSize = qSize * 0.62;
-  ctx.font = fontString(sSize, UI_FONT);
-  ctx.letterSpacing = `${(sSize * 0.22).toFixed(2)}px`;
-  ctx.fillStyle = gold;
-  ctx.fillText(`— ${String(source || '').toUpperCase()} —`, cx, y + qSize * 0.12);
-  ctx.restore();
-  const lh = blockH * 1.15;
-  const off = textW / 2 + lh * 0.3;
-  drawLaurel(ctx, cx - off, cy + lh * 0.02, lh, -1, gold);
-  drawLaurel(ctx, cx + off, cy + lh * 0.02, lh, 1, gold);
-  return { x: cx - off - lh * 0.45, y: cy - lh / 2, w: off * 2 + lh * 0.9, h: lh };
-}
 
-function wrapText(ctx, text, maxW) {
-  const words = text.split(/\s+/);
-  const lines = [];
-  let cur = '';
-  for (const word of words) {
-    const test = cur ? `${cur} ${word}` : word;
-    if (ctx.measureText(test).width > maxW && cur) {
-      lines.push(cur);
-      cur = word;
-    } else cur = test;
+  const cy = y + h * 0.5;
+  // Edition tag on the right.
+  const tag = String(edition || '').toUpperCase().trim();
+  let right = x + w - pad;
+  ctx.save();
+  if (tag) {
+    const ts = h * 0.4;
+    ctx.font = fontString(ts, UI_FONT);
+    ctx.letterSpacing = `${(ts * 0.24).toFixed(2)}px`;
+    const tw = ctx.measureText(tag).width;
+    const bw = tw + ts * 1.3;
+    const bh = h * 0.6;
+    const bx = right - bw;
+    ctx.fillStyle = withAlpha(gold, 0.14);
+    ctx.fillRect(bx, cy - bh / 2, bw, bh);
+    ctx.strokeStyle = gold;
+    ctx.lineWidth = Math.max(1.5, h * 0.04);
+    ctx.strokeRect(bx, cy - bh / 2, bw, bh);
+    ctx.fillStyle = gold;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(tag, bx + ts * 0.65 + ts * 0.12, cy + h * 0.02);
+    right = bx - pad;
   }
-  if (cur) lines.push(cur);
-  return lines.slice(0, 3);
+  ctx.restore();
+
+  // Stars + quote + source on the left.
+  const starR = h * 0.17;
+  let lx = x + pad + starR;
+  drawStars(ctx, lx + starR * 2.4 * 2, cy, starR, 5, gold);
+  lx += starR * 2.4 * 4 + starR + h * 0.4;
+  const q = String(quote || '').trim();
+  const src = String(source || '').trim();
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = h * 0.08 * scale;
+  const room = right - lx;
+  const qLabel = q ? `“${q.toUpperCase()}”` : '';
+  const sLabel = src ? `— ${src.toUpperCase()}` : '';
+  let qs = h * 0.5;
+  let ss = h * 0.32;
+  ctx.font = fontString(qs, UI_FONT);
+  ctx.letterSpacing = `${(qs * 0.05).toFixed(2)}px`;
+  const qw = qLabel ? ctx.measureText(qLabel).width : 0;
+  ctx.font = fontString(ss, UI_FONT);
+  ctx.letterSpacing = `${(ss * 0.24).toFixed(2)}px`;
+  const sw = sLabel ? ctx.measureText(sLabel).width : 0;
+  const gap = h * 0.4;
+  const total = qw + (sLabel ? gap + sw : 0);
+  if (total > room && total > 0) {
+    const k = room / total;
+    qs *= k;
+    ss *= k;
+  }
+  if (qLabel) {
+    qs = fitLabelSize(ctx, qLabel, qs, room, 0.05);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(qLabel, lx, cy + h * 0.03);
+    lx += ctx.measureText(qLabel).width + gap;
+  }
+  if (sLabel) {
+    ctx.font = fontString(ss, UI_FONT);
+    ctx.letterSpacing = `${(ss * 0.24).toFixed(2)}px`;
+    ctx.fillStyle = gold;
+    ctx.fillText(sLabel, lx, cy + h * 0.03);
+  }
+  ctx.restore();
+  return { x, y, w, h };
 }
 
 /** Round seal: starburst rim, double ring, ring text and a bold centre. */

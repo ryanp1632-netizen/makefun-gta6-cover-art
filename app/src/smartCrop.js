@@ -6,9 +6,9 @@
 export const CROP_VARIANTS = ['portrait', 'close', 'wide', 'detail'];
 
 const FACE_SHARE = { hero: 0.5, portrait: 0.44, close: 0.62, wide: 0.28 };
-const HAIR_ABOVE = 0.5; // head top sits this many face-heights above the face box
-const CHIN_BELOW = 0.3; // the face box often stops at the mouth; keep the chin and jaw inside the zone
-const MIN_COVER_SHARE = 0.7; // never shrink below 70% of the covering scale (keeps edge extension small)
+const HAIR_ABOVE = 0.42; // head top sits this many face-heights above the (hairline-to-chin) face box
+const CHIN_BELOW = 0.22; // the face box can stop at a beard or the mouth; keep the chin and jaw inside the zone
+const MIN_COVER_SHARE = 0.72; // never shrink below 72% of the covering scale (keeps edge extension small)
 
 function mirroredFace(photo, flip) {
   const f = photo.face;
@@ -42,7 +42,10 @@ export function frameHeadAndShoulders(photo, pw, ph, zone, adjust = {}) {
   const flip = !!adjust.flip;
   const face = mirroredFace(photo, flip);
   const share = FACE_SHARE[variant] ?? FACE_SHARE.portrait;
-  const headH = face.h * (1 + HAIR_ABOVE + CHIN_BELOW);
+  // The head estimate never reaches past the photo's own edges (hair the photographer cropped cannot be shown).
+  const headTop = Math.max(0, face.y - HAIR_ABOVE * face.h);
+  const headBottom = Math.min(photo.h, face.y + face.h * (1 + CHIN_BELOW));
+  const headH = headBottom - headTop;
   const headW = face.w * 1.45;
 
   // Largest scale that keeps the whole head in the zone, the "nice" scale for this variant, and the scale at which
@@ -57,7 +60,6 @@ export function frameHeadAndShoulders(photo, pw, ph, zone, adjust = {}) {
   const zoom = adjust.zoom || 1;
   s *= zoom;
 
-  const headTop = face.y - HAIR_ABOVE * face.h;
   const faceCx = face.x + face.w / 2;
   const headroom = Math.max(zone.h * 0.035, (zone.h - headH * s) * 0.16);
   let ox = zone.x + zone.w / 2 - faceCx * s;

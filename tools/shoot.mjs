@@ -1,7 +1,7 @@
 // Screenshot maker for Golden Mile Cover Studio (Node 22, standard library only, global WebSocket).
 // It serves app/ on a local port, launches headless Chrome with a throwaway profile, drives the editor through the
 // DevTools protocol and writes screenshots/:
-//   1-cover.jpg    the 1920x1080 Cast Mosaic cover in Sunset Gold, scaled to 1280x720
+//   1-cover.jpg    the 1920x1080 Cast Mosaic (hero mosaic) cover in Sunset Gold, scaled to 1280x720
 //   2-editor.jpg   the editor at 1280x800 with the demo cast loaded and a panel selected
 //   3-portrait.jpg a 1080x1350 Diagonal Strips cover in Neon Night, scaled to 1024x1280
 //   4-square.jpg   a 1080x1080 Six Grid cover in Tropic Teal, as is
@@ -265,8 +265,8 @@ async function runInteractionChecks(cdp, outFile) {
   const at = (fx, fy) => ({ x: box.x + box.w * fx, y: box.y + box.h * fy });
   const mouse = (type, p, extra = {}) => cdp.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra });
 
-  // Pan inside panel 3 (top row, second cast panel).
-  const p3 = at(0.48, 0.25);
+  // Pan inside panel 3 (top row, first cast panel right of the hero).
+  const p3 = at(0.7, 0.25);
   await mouse('mousePressed', p3);
   await mouse('mouseMoved', { x: p3.x + 30, y: p3.y + 20 });
   await mouse('mouseReleased', { x: p3.x + 30, y: p3.y + 20 });
@@ -298,7 +298,7 @@ async function runInteractionChecks(cdp, outFile) {
   const W = 1920, H = 1080;
   const layoutPanels = await cdp.eval(`(async () => { const m = await import('./src/layouts.js'); const o = await import('./src/panelOverlay.js'); const l = m.getLayout('castMosaic', '16x9'); return l.panels.map((p) => o.panelBadgePoint(p)); })()`);
   const from = { x: box.x + (layoutPanels[1].x / W) * box.w, y: box.y + (layoutPanels[1].y / H) * box.h };
-  const to = at(0.75, 0.2);
+  const to = at(0.9, 0.25);
   await mouse('mousePressed', from);
   await mouse('mouseMoved', { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 });
   await mouse('mouseMoved', to);

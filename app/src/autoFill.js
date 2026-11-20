@@ -1,6 +1,7 @@
-// Auto-fill: spread the loaded photos over the panels so every panel holds a different person, with the best face
-// (highest face-quality score) in the hero panel. With fewer photos than panels the extra panels reuse photos with a
-// different crop; with one photo the panels show distinct crops of it (face close-up, mid shot, background detail).
+// Auto-fill: spread the loaded photos over the panels so every panel holds a different person, ranked by face
+// quality: the best face goes in the hero panel, the next-best in the cast panels, and the weakest is left out when
+// there are more photos than panels. With fewer photos than panels the extra panels reuse photos with a different
+// crop; with one photo the panels show distinct crops of it (face close-up, mid shot, background detail).
 
 import { MAX_PANELS } from './layouts.js';
 
@@ -26,12 +27,30 @@ const REUSE_PLAN = [
   { variant: 'wide', flip: true },
 ];
 
-/** Rank photos for the hero spot: face quality first, keeping the user's order as the tie-breaker. */
+/**
+ * How well a photo can fill a large hero frame with a big, whole head: 1 when the head takes roughly 30–52% of
+ * the photo's height (a head-and-shoulders or waist-up shot), less for a tiny face or a crop so tight that the head
+ * could not stay whole once the photo covers a wide panel.
+ */
+export function heroFramingFit(photo) {
+  if (!photo.face) return 0.5;
+  const headShare = (photo.face.h * 1.8) / photo.h;
+  if (headShare < 0.3) return Math.max(0.35, 1 - (0.3 - headShare) * 3);
+  if (headShare > 0.52) return Math.max(0.35, 1 - (headShare - 0.52) * 3);
+  return 1;
+}
+
+/**
+ * Rank photos: the hero is the best face for the hero frame (face quality × framing fit); the others follow by
+ * face quality. The user's order breaks ties.
+ */
 export function rankPhotosForHero(photos) {
-  return photos
-    .map((p, i) => ({ p, i }))
-    .sort((a, b) => b.p.quality - a.p.quality || a.i - b.i)
-    .map((x) => x.p);
+  if (!photos.length) return [];
+  const indexed = photos.map((p, i) => ({ p, i }));
+  const heroKey = (x) => x.p.quality * heroFramingFit(x.p);
+  const hero = indexed.reduce((best, x) => (heroKey(x) > heroKey(best) + 1e-9 ? x : best), indexed[0]);
+  const rest = indexed.filter((x) => x !== hero).sort((a, b) => b.p.quality - a.p.quality || a.i - b.i);
+  return [hero, ...rest].map((x) => x.p);
 }
 
 /** Build a fresh panels array (MAX_PANELS slots) from the photo list. */
@@ -42,9 +61,9 @@ export function autoFillPanels(photos) {
     const only = photos[0];
     return slots.map((s, i) => ({ ...s, photoId: only.id, ...SINGLE_PHOTO_PLAN[i % SINGLE_PHOTO_PLAN.length] }));
   }
-  const hero = rankPhotosForHero(photos)[0];
-  const rest = photos.filter((p) => p !== hero);
-  const order = [hero, ...rest];
+  // Best face in the hero panel, then the next-best faces in layout order, so with more photos than panels the
+  // weakest photo is the one left out (it stays loaded, one click away in the photo strip).
+  const order = rankPhotosForHero(photos);
   return slots.map((s, i) => {
     if (i < order.length) return { ...s, photoId: order[i].id, variant: 'portrait' };
     const reuse = order[(i - order.length) % order.length];

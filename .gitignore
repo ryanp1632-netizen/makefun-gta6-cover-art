@@ -1,0 +1,7 @@
+# outputs of `MAKEFUN_OUTPUT_DIR=out node main.ts` and local test runs
+out*/
+# caches and editor/OS clutter
+.cache/
+node_modules/
+.DS_Store
+Thumbs.db

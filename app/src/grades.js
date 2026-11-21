@@ -4,7 +4,9 @@
 //   2. applyColourGrade — over the whole poster: tone curve (lift/gamma/gain), contrast S-curve, saturation, split
 //      toning (shadows / highlights), vignette, halftone dots, film grain; then bloom and light leaks on the canvas.
 // The five named grades are thin wrappers so each look can be read on its own. Skin-like pixels keep their own warm
-// hue under every grade (see photoFinish.js), and one shared film grain goes over the whole poster.
+// hue under every grade (see photoFinish.js), and one shared film grain goes over the whole poster. A panel whose own
+// photo is strongly neon-night (measurePanelNeon) mixes toward a night look under the warm grades
+// (neonPanelGradeMix), so its magenta and cyan survive as a cool accent instead of being flattened to gold.
 
 import { skinToneWeight, addFilmGrain } from './photoFinish.js';
 
@@ -186,12 +188,78 @@ function buildToneLut(grade, channel) {
   return lut;
 }
 
+// ---------------------------------------------------------------- neon panels keep their night colours
+
+/**
+ * How strongly neon-night a photo or panel is, in [0, 1]: the share of saturated, lit magenta, violet or cyan
+ * pixels (skin excluded), counted only in a dark (night) frame that has some magenta in it. A golden-hour photo or a
+ * bright turquoise sea scores near 0; a street at night lit by pink and cyan signs scores high.
+ */
+export function measurePanelNeon(imageData) {
+  const { data, width, height } = imageData;
+  const step = Math.max(1, Math.floor(Math.sqrt((width * height) / 30000)));
+  let neon = 0;
+  let magenta = 0;
+  let total = 0;
+  let lumSum = 0;
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const i = (y * width + x) * 4;
+      if (data[i + 3] === 0) continue;
+      total++;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      lumSum += 0.299 * r + 0.587 * g + 0.114 * b;
+      const mx = Math.max(r, g, b);
+      const mn = Math.min(r, g, b);
+      if (mx < 70 || mx - mn < mx * 0.38) continue;
+      if (skinToneWeight(r, g, b) > 0.3) continue;
+      // Hue in degrees.
+      const d = mx - mn;
+      let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+      if (h >= 165 && h <= 215) neon++;
+      else if (h >= 255 && h <= 345) { neon++; magenta++; }
+    }
+  }
+  if (!total) return 0;
+  const meanLum = lumSum / total / 255;
+  // Panels are measured after auto-exposure has lifted them, so "night" allows mid-tones; a sunlit sea fails it.
+  const night = Math.min(1, Math.max(0, (0.62 - meanLum) / 0.12));
+  const pink = Math.min(1, magenta / total / 0.03);
+  return (neon / total) * night * pink;
+}
+
+/**
+ * How much of a panel keeps a neon-friendly grade instead of the poster's main one (0..0.7). Only clearly neon
+ * panels qualify, so golden-hour photos still take the main grade in full and the poster keeps one colour story.
+ */
+export function neonPanelGradeMix(neonShare, gradeKey) {
+  if (gradeKey !== 'sunsetGold' && gradeKey !== 'tropicTeal' && gradeKey !== 'retroPrint') return 0;
+  const t = Math.min(1, Math.max(0, (neonShare - 0.1) / 0.16));
+  return 0.7 * t * t * (3 - 2 * t);
+}
+
+/** The look a neon panel is mixed toward: night contrast and colour that keeps magenta and cyan alive. */
+export const NEON_KEEP_GRADE = {
+  key: 'neonKeep',
+  lift: [0.01, 0.0, 0.03], gamma: [1.0, 1.02, 0.97], gain: [1.04, 0.99, 1.04],
+  contrast: 0.38, saturation: 1.22, vibrance: 0.22,
+  shadowTint: [0.2, 0.25, 0.7], highlightTint: [1.0, 0.55, 0.85], toneAmount: 0.16,
+};
+
 /** Grade pixels in place. `scale` is output px per design px (keeps grain and dots consistent across sizes). */
-export function applyColourGrade(imageData, grade, scale = 1) {
+export function applyColourGrade(imageData, grade, scale = 1, keep = null) {
   const { data, width, height } = imageData;
   const lr = buildToneLut(grade, 0);
   const lg = buildToneLut(grade, 1);
   const lb = buildToneLut(grade, 2);
+  const alt = NEON_KEEP_GRADE;
+  const ar = keep ? buildToneLut(alt, 0) : null;
+  const ag = keep ? buildToneLut(alt, 1) : null;
+  const ab = keep ? buildToneLut(alt, 2) : null;
   const sat = grade.saturation;
   const vib = grade.vibrance || 0;
   const [sr, sg, sb] = grade.shadowTint;
@@ -232,6 +300,29 @@ export function applyColourGrade(imageData, grade, scale = 1) {
       r += (sr * 255 - 128) * ws + (hr * 255 - 128) * wh;
       g += (sg * 255 - 128) * ws + (hg * 255 - 128) * wh;
       b += (sb * 255 - 128) * ws + (hb * 255 - 128) * wh;
+      // Neon panels: mix toward a night look that keeps their magenta and cyan instead of flattening them to gold.
+      const kk = keep ? keep[y * width + x] : 0;
+      if (kk > 0) {
+        const m = kk / 255;
+        let r2 = ar[r0];
+        let g2 = ag[g0];
+        let b2 = ab[b0];
+        const l2 = (0.299 * r2 + 0.587 * g2 + 0.114 * b2) / 255;
+        const mx2 = Math.max(r2, g2, b2);
+        const s2 = alt.saturation + alt.vibrance * (1 - (mx2 > 0 ? (mx2 - Math.min(r2, g2, b2)) / mx2 : 0));
+        const L2 = l2 * 255;
+        r2 = L2 + (r2 - L2) * s2;
+        g2 = L2 + (g2 - L2) * s2;
+        b2 = L2 + (b2 - L2) * s2;
+        const ws2 = (1 - l2) * (1 - l2) * alt.toneAmount;
+        const wh2 = l2 * l2 * alt.toneAmount;
+        r2 += (alt.shadowTint[0] * 255 - 128) * ws2 + (alt.highlightTint[0] * 255 - 128) * wh2;
+        g2 += (alt.shadowTint[1] * 255 - 128) * ws2 + (alt.highlightTint[1] * 255 - 128) * wh2;
+        b2 += (alt.shadowTint[2] * 255 - 128) * ws2 + (alt.highlightTint[2] * 255 - 128) * wh2;
+        r += (r2 - r) * m;
+        g += (g2 - g) * m;
+        b += (b2 - b) * m;
+      }
       // Skin protection: on skin-like pixels, keep the graded brightness but bring back the photo's own warm hue,
       // so no grade turns faces grey, green or magenta.
       const sw = skinToneWeight(r0, g0, b0) * skinKeep;
@@ -325,21 +416,24 @@ export function applyLightLeaks(ctx, grade, pw, ph) {
   ctx.restore();
 }
 
-/** Grade the whole canvas with one look (pixel pass + bloom + light leaks). */
-export function gradeCanvas(ctx, grade, pw, ph, scale) {
+/**
+ * Grade the whole canvas with one look (pixel pass + bloom + light leaks). `keep` (optional, one byte per device
+ * pixel) marks neon panels that mix toward NEON_KEEP_GRADE.
+ */
+export function gradeCanvas(ctx, grade, pw, ph, scale, keep = null) {
   const img = ctx.getImageData(0, 0, pw, ph);
-  applyColourGrade(img, grade, scale);
+  applyColourGrade(img, grade, scale, keep);
   addFilmGrain(img, grade.grain * Math.min(1, Math.max(0.35, scale)));
   ctx.putImageData(img, 0, 0);
   applyBloom(ctx, grade, pw, ph);
   applyLightLeaks(ctx, grade, pw, ph);
 }
 
-export const applySunsetGoldGrade = (ctx, pw, ph, scale) => gradeCanvas(ctx, GRADES.sunsetGold, pw, ph, scale);
-export const applyNeonNightGrade = (ctx, pw, ph, scale) => gradeCanvas(ctx, GRADES.neonNight, pw, ph, scale);
-export const applyTropicTealGrade = (ctx, pw, ph, scale) => gradeCanvas(ctx, GRADES.tropicTeal, pw, ph, scale);
-export const applyUltravioletGrade = (ctx, pw, ph, scale) => gradeCanvas(ctx, GRADES.ultraviolet, pw, ph, scale);
-export const applyRetroPrintGrade = (ctx, pw, ph, scale) => gradeCanvas(ctx, GRADES.retroPrint, pw, ph, scale);
+export const applySunsetGoldGrade = (ctx, pw, ph, scale, keep) => gradeCanvas(ctx, GRADES.sunsetGold, pw, ph, scale, keep);
+export const applyNeonNightGrade = (ctx, pw, ph, scale, keep) => gradeCanvas(ctx, GRADES.neonNight, pw, ph, scale, keep);
+export const applyTropicTealGrade = (ctx, pw, ph, scale, keep) => gradeCanvas(ctx, GRADES.tropicTeal, pw, ph, scale, keep);
+export const applyUltravioletGrade = (ctx, pw, ph, scale, keep) => gradeCanvas(ctx, GRADES.ultraviolet, pw, ph, scale, keep);
+export const applyRetroPrintGrade = (ctx, pw, ph, scale, keep) => gradeCanvas(ctx, GRADES.retroPrint, pw, ph, scale, keep);
 
 const GRADE_FUNCTIONS = {
   sunsetGold: applySunsetGoldGrade,
@@ -349,6 +443,6 @@ const GRADE_FUNCTIONS = {
   retroPrint: applyRetroPrintGrade,
 };
 
-export function applyGradeByKey(key, ctx, pw, ph, scale) {
-  (GRADE_FUNCTIONS[key] || applySunsetGoldGrade)(ctx, pw, ph, scale);
+export function applyGradeByKey(key, ctx, pw, ph, scale, keep = null) {
+  (GRADE_FUNCTIONS[key] || applySunsetGoldGrade)(ctx, pw, ph, scale, keep);
 }

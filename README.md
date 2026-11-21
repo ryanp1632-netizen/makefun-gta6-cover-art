@@ -6,8 +6,14 @@
 
 Golden Mile Cover Studio turns your own photos into a crime-epic cast poster: one big hero panel and six framed
 cast panels, each cropped on a face by a built-in face finder, a chunky sunset-gradient title with a 3D extrude, a
-neon script subtitle over a striped sunset, a review bar with stars on top, and a full colour grade. It exports PNGs
-at 1080×1080, 1080×1350 and 1920×1080 in one click.
+neon script subtitle over a striped sunset, a review bar with stars on top, and a full colour grade in which a
+neon-night photo stays a cool magenta-and-cyan accent among the golden-hour panels. It exports PNGs at 1080×1080,
+1080×1350 and 1920×1080 in one click.
+
+**New in v5**: two demo cast photos re-shot for more natural, film-still skin and eyes (one of them now a
+neon-night street portrait); warm/cool contrast (a neon-night panel keeps its own colours under Sunset Gold, Tropic
+Teal and Retro Print); name tags that never sit under or touch the title band, neon script, ribbon or seal; and
+checks that every cast head fills at least a fifth of its panel.
 
 ## Run it
 
@@ -22,8 +28,9 @@ modules, no build step, no libraries, no network requests), so any static file s
 
 1. **Add photos**: choose files, drop them on the page, or paste them. Press **Try samples** to load the
    8-person demo cast. The panels fill themselves: every panel gets a different person, the best face goes in
-   the hero panel and the next-best faces fill the cast panels. With more photos than panels the weakest photo
-   is left out; it stays in the photo strip, one click from any panel.
+   the hero panel and the next-best faces fill the cast panels. A strong neon-night photo is kept out of the hero
+   (which carries the poster's grade) and goes to the lower-right cast panel as a cool accent. With more photos
+   than panels the weakest photo is left out; it stays in the photo strip, one click from any panel.
 2. **Caption**: edit the title (Anton or Saira Condensed), script subtitle (Yellowtail or Pacifico), tagline
    ribbon, the review quote and source for the top bar, the edition tag ("VOL. 1"), billing block (words typed
    in lower case print small), seal text, release line and the per-panel name tags (filled from the photos
@@ -73,10 +80,18 @@ show all sizes at once.
 - **Five colour grades** on pixel data (`app/src/grades.js`): Sunset Gold, Neon Night, Tropic Teal, Ultraviolet
   and Retro Print. Each one uses a tone curve, split toning, saturation and vibrance, a contrast S-curve,
   vignette, film grain, bloom and light leaks; Retro Print adds halftone dots.
+- **Warm/cool contrast** (`measurePanelNeon`, `neonPanelGradeMix` in `app/src/grades.js`): each panel's pixels
+  are measured for neon-night light (saturated magenta and cyan in a dark frame, skin excluded; a sunlit
+  turquoise sea does not count). Under the warm grades such a panel mixes toward a night look, so its neon
+  survives as a cool accent while vignette, grain, bloom and light leaks still tie it into the poster. Skin keeps
+  its natural hue in every grade.
 - **Lettering drawn in code** (`app/src/lettering.js`): the auto-fitting chrome title (gradient fill, thick
   outline, light rim, offset extrude, stripe cuts, gloss, sparkles), the neon script subtitle, tagline ribbon,
-  name tags placed in each panel's free area, the review top bar, round seal, barcode, billing block and
-  release line.
+  name tags, the review top bar, round seal, barcode, billing block and release line.
+- **Name-tag placement** (`placeNameTagClearOfTitle` in `app/src/renderCover.js`): each tag goes in its
+  panel's free area, never on a face, and keeps a clear margin (about one tag height) from the title band,
+  neon script, tagline ribbon and seal. In the 16:9 Cast Mosaic the panels under the title keep their heads
+  above the panel foot, where the tag sits.
 - **Decoration** (`app/src/decor.js`): the dark sunset poster ground, sunset sky with a striped sun, sea
   glints, palm and skyline silhouettes, lens flare and a title glow.
 - **Test hook**: `window.coverStudio` (`loadSamples`, `setSize`, `setLayout`, `setGrade`, `selectPanel`,
@@ -98,9 +113,11 @@ app is original work: it uses no game logo, wordmark, font, artwork or character
 
 The demo cast is AI-generated and shows no real people. Two photos (`boulevard.jpg`, `pier.jpg`) come from the
 make.fun bounty kit. The six in `app/samples/cast/` were made with the free Pollinations image API; the model is
-"sana" according to the EXIF data. For v4, four of them were replaced by more photographic candidates ("candid
-35mm film photograph" prompts); each was cropped to remove the service's corner mark. The prompts, seeds, how each
-file was chosen, the request form and the crop are listed in [app/samples/PHOTOS.md](app/samples/PHOTOS.md).
+"sana" according to the EXIF data. For v5 the Fixer (now on a neon-lit street at night) and the Lookout were
+re-shot with "candid 35mm film still ... unretouched" prompts, two candidates each, keeping whichever image looked
+most like a real photograph; the Rider was re-shot too, but both candidates were worse than the v4 file, which
+stayed. Each file was cropped to remove the service's corner mark. The prompts, seeds, how each file was chosen,
+the request form and the crop are listed in [app/samples/PHOTOS.md](app/samples/PHOTOS.md).
 
 ## Screenshots
 
@@ -116,9 +133,11 @@ over the DevTools protocol:
 | `4-square.jpg` | The 1080×1080 Six Grid cover in Tropic Teal, at full size |
 
 The covers are the exact PNGs the export button produces (via `renderCoverDataURL`), only scaled down and
-JPEG-encoded in the page. The script fails if the page logs a console error, or if any face is cut by its
-panel or covered by lettering. `node tools/shoot.mjs --interact` also drives the editor like a user: file upload,
-single-photo crops, pan, wheel zoom, number-drag swap, flip, undo/redo, caption edits and export all.
+JPEG-encoded in the page. The script fails if the page logs a console error, if any face is cut by its panel or
+covered by lettering, if a name tag touches the title band, script, ribbon or seal, or if a cast head is under a
+fifth of its panel's height. `node tools/shoot.mjs --matrix DIR` renders every layout and size for review, and
+`node tools/shoot.mjs --interact` drives the editor like a user: file upload, single-photo crops, pan, wheel zoom,
+number-drag swap, flip, undo/redo, caption edits and export all.
 
 ## Handing it in
 

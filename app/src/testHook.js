@@ -31,6 +31,11 @@ export function installTestHook(api) {
         face: p.face && { x: Math.round(p.face.x), y: Math.round(p.face.y), w: Math.round(p.face.w), h: Math.round(p.face.h) },
         faceInside: p.faceInside,
         coveredBy: p.coveredBy,
+        hero: !!p.hero,
+        headShare: Math.round(p.headShare * 1000) / 1000,
+        tagTouches: p.tagTouches,
+        neon: Math.round(p.neon * 1000) / 1000,
+        neonMix: Math.round(p.neonMix * 1000) / 1000,
       }));
     },
 

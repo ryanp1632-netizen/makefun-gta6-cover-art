@@ -6,11 +6,14 @@
 //   3-portrait.jpg a 1080x1350 Diagonal Strips cover in Neon Night, scaled to 1024x1280
 //   4-square.jpg   a 1080x1080 Six Grid cover in Tropic Teal, as is
 // Covers come from the app's own export renderer (PNG data URL) and are only scaled down and JPEG-encoded in the
-// page. Console errors, exceptions or a face covered by lettering fail the run.
+// page. Console errors, exceptions, a face cut by its panel or covered by lettering, a name tag touching the title
+// band, script, ribbon or seal, or a cast head under a fifth of its panel height fail the run.
 //
 //   node tools/shoot.mjs                 write all four screenshots
 //   node tools/shoot.mjs --faces F.jpg   write a face-finder debug sheet
 //   node tools/shoot.mjs --matrix DIR    write every layout x size x grade-of-choice cover (half size) for review
+//   node tools/shoot.mjs --interact      drive the editor like a user (upload, pan, zoom, swap, undo, export)
+//   GM_REPORT=1 node tools/shoot.mjs ... also print every panel's head share and neon measure
 
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -339,13 +342,22 @@ async function runInteractionChecks(cdp, outFile) {
   expect(/night-shift-money-1080x1080\.png.*night-shift-money-1080x1350\.png.*night-shift-money-1920x1080\.png/.test(toast), `export all writes three PNGs (${toast})`);
 }
 
+/** Faces whole and clear of lettering, name tags clear of the title stack and seal, cast heads big enough. */
 function checkFaces(panels, label) {
+  if (process.env.GM_REPORT) for (const p of panels) console.log(`  ${label} #${p.panel} ${p.photo} head ${p.headShare} neon ${p.neon} mix ${p.neonMix}`);
   const bad = panels.filter((p) => p.face && (!p.faceInside || p.coveredBy.length));
-  if (bad.length) {
-    console.error(`${label}: face problems ${JSON.stringify(bad)}`);
+  const touching = panels.filter((p) => p.tagTouches && p.tagTouches.length);
+  const small = panels.filter((p) => p.face && !p.hero && p.headShare < 0.19);
+  if (bad.length) console.error(`${label}: face problems ${JSON.stringify(bad)}`);
+  if (touching.length) console.error(`${label}: name tags touching lettering ${JSON.stringify(touching.map((p) => [p.panel, p.photo, p.tagTouches]))}`);
+  if (small.length) console.error(`${label}: heads under a fifth of the panel ${JSON.stringify(small.map((p) => [p.panel, p.photo, p.headShare]))}`);
+  if (bad.length || touching.length || small.length) {
     process.exitCode = 1;
   } else {
-    console.log(`${label}: ${panels.filter((p) => p.face).length} faces whole, inside their panels and clear of lettering`);
+    const faces = panels.filter((p) => p.face);
+    const minShare = Math.min(...faces.filter((p) => !p.hero).map((p) => p.headShare));
+    const neon = panels.filter((p) => p.neonMix > 0).map((p) => `${p.photo} ${p.neonMix}`);
+    console.log(`${label}: ${faces.length} faces whole and clear of lettering, tags clear of the title stack, smallest cast head ${minShare.toFixed(2)} of its panel${neon.length ? `, neon kept: ${neon.join(', ')}` : ''}`);
   }
 }
 

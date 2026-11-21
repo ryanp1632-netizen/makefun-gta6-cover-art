@@ -146,15 +146,17 @@ export function layoutHeroMosaic16x9() {
   const g = geometry(SIZES['16x9'], 16, 20, 0.09, 74, 954);
   const split = 590;
   const hero = slantedPanel(g, 412, 1160, -100, 1200, 84, 490, {
-    hero: true, zoneMargin: 30, tagOrder: ['bl', 'br'],
+    hero: true, zoneMargin: 30, tagOrder: ['bl', 'br', 'tr'],
     fade: { y0: 500, y1: 954, strength: 0.82, sun: { cx: 778, cy: 872, r: 168, alpha: 0.88 } },
   });
   const upper = { tagOrder: ['bl', 'br', 'tl', 'tr'], zoneMargin: 14 };
   const lower = { tagOrder: ['bl', 'br', 'tl', 'tr'], zoneMargin: 14 };
   const [leftTop] = row(g, [-400, 412], -100, split, 84, 490, upper);
-  const [leftBot] = row(g, [-400, 412], split, 1200, 702, 950, lower);
+  // The lower-left panel lies outside the title band, so its head may fill it with the name tag on top; the lower
+  // right panels sit under the title and seal, so their heads stop short of the panel foot, where the tag sits.
+  const [leftBot] = row(g, [-400, 412], split, 1200, 702, 950, { ...lower, tagOrder: ['tl', 'tr', 'bl', 'br'] });
   const rightTop = row(g, [1160, 1534, 2400], -100, split, 84, 490, upper);
-  const rightBot = row(g, [1160, 1534, 2400], split, 1200, 702, 950, lower);
+  const rightBot = row(g, [1160, 1534, 2400], split, 1200, 702, 888, lower);
   return {
     panels: [hero, leftTop, rightTop[0], rightTop[1], leftBot, rightBot[0], rightBot[1]],
     topBar: { x: 0, y: 0, w: 1920, h: 66, pad: 30 },
@@ -220,7 +222,8 @@ export function layoutHeroMosaic1x1() {
 
 export function layoutDiagonalStrips16x9() {
   const g = geometry(SIZES['16x9'], 16, 20, 0.1, 74, 1080);
-  const strips = row(g, [-400, 330, 640, 960, 1280, 1600, 2400], -100, 770, 84, 476, {
+  // Heads start a tag's height under the top bar, so each strip's name tag fits above the head.
+  const strips = row(g, [-400, 330, 640, 960, 1280, 1600, 2400], -100, 770, 136, 486, {
     zoneMargin: 12, tagOrder: ['tl', 'tr'], fade: { y0: 500, y1: 770, strength: 0.7 },
   });
   strips[2].hero = true;

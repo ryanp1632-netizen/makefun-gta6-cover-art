@@ -2,6 +2,7 @@
 // canvas capped at MAX_SIDE, then analysed once for its face box and face-quality score. Nothing is uploaded.
 
 import { buildSaliencyMaps, findFaceBox, scoreFaceQuality } from './faceFinder.js';
+import { measurePanelNeon } from './grades.js';
 
 const MAX_SIDE = 1800;
 let nextPhotoId = 1;
@@ -59,12 +60,23 @@ function makeThumbnail(canvas, face) {
   return t.toDataURL('image/jpeg', 0.82);
 }
 
-/** Analyse a drawn photo: face box, face quality and a face-centred thumbnail. */
+/** How neon-night a whole photo is (see measurePanelNeon), measured on a small copy. */
+function measurePhotoNeon(canvas) {
+  const k = Math.min(1, 200 / Math.max(canvas.width, canvas.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(canvas.width * k));
+  c.height = Math.max(1, Math.round(canvas.height * k));
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(canvas, 0, 0, c.width, c.height);
+  return measurePanelNeon(g.getImageData(0, 0, c.width, c.height));
+}
+
+/** Analyse a drawn photo: face box, face quality, neon-night share and a face-centred thumbnail. */
 export function analysePhoto(canvas) {
   const maps = buildSaliencyMaps(canvas, canvas.width, canvas.height);
   const face = findFaceBox(canvas, canvas.width, canvas.height, maps);
   const quality = scoreFaceQuality(maps, face);
-  return { face, quality, thumb: makeThumbnail(canvas, face) };
+  return { face, quality, neon: measurePhotoNeon(canvas), thumb: makeThumbnail(canvas, face) };
 }
 
 function makePhotoRecord(canvas, name, tag, sample) {

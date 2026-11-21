@@ -1,13 +1,13 @@
 // renderCover: composes one poster onto a canvas of any pixel size. Order of work:
 //   dark sunset backdrop (+ sky, sun, skyline, palms) -> panels (soft drop shadow, smart-cropped, auto-exposed and
-//   face-sharpened photo) -> whole-poster colour grade (pixels with skin protection, shared film grain, bloom, light
-//   leaks) -> warm-white keyline frames -> title glow and bottom shade -> lettering (review top bar, billing, barcode,
+//   face-sharpened photo) -> whole-poster colour grade (pixels with skin protection, neon panels kept cool, shared
+//   film grain, bloom, light leaks) -> warm-white keyline frames -> title glow and bottom shade -> lettering (review top bar, billing, barcode,
 //   release line, seal, ribbon, title, neon script, name tags, sparkles, flare).
 // It returns a report with every panel's polygon, face rect and name-tag rect, plus all lettering rects, which the
 // editor uses for hit-testing and the test hook uses to prove no lettering covers a face.
 
 import { getLayout, pointInPolygon, innerRect } from './layouts.js';
-import { GRADES, applyGradeByKey, autoExposePanel } from './grades.js';
+import { GRADES, applyGradeByKey, autoExposePanel, measurePanelNeon, neonPanelGradeMix } from './grades.js';
 import { sharpenFaceArea } from './photoFinish.js';
 import { frameHeadAndShoulders, drawFramedPhoto } from './smartCrop.js';
 import {
@@ -51,7 +51,7 @@ export function renderPanelImage(panel, photo, slot, scale) {
   autoExposePanel(img, faceDev);
   sharpenFaceArea(img, faceDev, 0.75);
   g.putImageData(img, 0, 0);
-  const result = { canvas: c, frame };
+  const result = { canvas: c, frame, neon: measurePanelNeon(img) };
   panelCache.set(key, result);
   if (panelCache.size > PANEL_CACHE_LIMIT) panelCache.delete(panelCache.keys().next().value);
   return result;
@@ -100,6 +100,30 @@ export function drawPanelFade(ctx, panel, bg, mood) {
     ctx.fillStyle = haze;
     ctx.fillRect(panel.bbox.x, sun.cy - sun.r * 0.2, panel.bbox.w, y1 - sun.cy + sun.r * 0.2);
   }
+}
+
+/**
+ * The neon-keep mask for the grade: one byte per device pixel, set inside every panel whose own photo is strongly
+ * neon-night (magenta and cyan city light), so a golden grade does not flatten that panel to beige. Returns null
+ * when no panel qualifies.
+ */
+export function buildNeonKeepMask(panelMixes, pw, ph, scale) {
+  if (!panelMixes.some((p) => p.mix > 0.01)) return null;
+  const c = document.createElement('canvas');
+  c.width = pw;
+  c.height = ph;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.setTransform(scale, 0, 0, scale, 0, 0);
+  for (const { poly, mix } of panelMixes) {
+    if (mix <= 0.01) continue;
+    g.fillStyle = `rgba(0,0,0,${mix.toFixed(3)})`;
+    tracePolygon(g, poly);
+    g.fill();
+  }
+  const d = g.getImageData(0, 0, pw, ph).data;
+  const keep = new Uint8Array(pw * ph);
+  for (let i = 0, j = 3; i < keep.length; i++, j += 4) keep[i] = d[j];
+  return keep;
 }
 
 /**
@@ -179,17 +203,41 @@ export function placeNameTag(ctx, text, panel, faceRect, avoid, baseSize, W, H) 
     const s = spanFor(c.y);
     const fits = c.x >= s.x - 1 && c.x + w <= s.x + s.w + 1;
     let cost = (inside ? 0 : 1e6) + (fits ? 0 : 5e5);
-    if (faceRect) cost += overlapArea(rect, { x: faceRect.x - 6, y: faceRect.y - 6, w: faceRect.w + 12, h: faceRect.h + 12 }) * 50;
+    if (faceRect) {
+      const onFace = overlapArea(rect, { x: faceRect.x - 6, y: faceRect.y - 6, w: faceRect.w + 12, h: faceRect.h + 12 });
+      if (onFace > 0) cost += onFace * 50 + 4e5;
+    }
     if (faceAbs) cost += overlapArea(rect, faceAbs) * 4;
-    for (const r of avoid) if (r) cost += overlapArea(rect, r) * 10;
+    for (const r of avoid) {
+      if (!r) continue;
+      const a = overlapArea(rect, r);
+      if (a > 0) cost += a * 10 + (r.hard ? 2e5 : 0);
+    }
     if (!best || cost < best.cost) best = { ...c, rect, cost, size };
     if (cost === 0) break;
   }
   return best;
 }
 
+/** Lettering kinds a name tag must keep a clear margin from (it may never sit under or touch them). */
+const TAG_CLEAR_KINDS = new Set(['title', 'subtitle', 'ribbon', 'seal']);
+
 /**
- * Render a cover. doc = {layout, grade, caption, panels[]}; photos = Map(id -> photo record).
+ * Place a name tag so it never sits under or touches the title band, neon script, tagline ribbon or seal: those
+ * rects are grown by a clearance margin (about one tag height) and any touch costs far more than a free spot.
+ */
+export function placeNameTagClearOfTitle(ctx, text, panel, faceRect, lettering, baseSize, W, H) {
+  const clear = baseSize * 1.1;
+  const near = baseSize * 0.35;
+  const avoid = lettering.map((r) => {
+    const pad = TAG_CLEAR_KINDS.has(r.kind) ? clear : near;
+    return { x: r.x - pad, y: r.y - pad, w: r.w + pad * 2, h: r.h + pad * 2, hard: TAG_CLEAR_KINDS.has(r.kind) || r.kind === 'tag' };
+  });
+  return placeNameTag(ctx, text, panel, faceRect, avoid, baseSize, W, H);
+}
+
+/**
+ * Render a cover. doc ={layout, grade, caption, panels[]}; photos = Map(id -> photo record).
  * The canvas size decides the output resolution; the layout is chosen by sizeKey.
  */
 export function renderCover(canvas, doc, photos, sizeKey) {
@@ -235,8 +283,10 @@ export function renderCover(canvas, doc, photos, sizeKey) {
     tracePolygon(ctx, panel.poly);
     ctx.clip();
     let faceAbs = null;
+    let neon = 0;
     if (photo) {
-      const { canvas: img, frame } = renderPanelImage(panel, photo, slot, scale);
+      const { canvas: img, frame, neon: share } = renderPanelImage(panel, photo, slot, scale);
+      neon = share;
       ctx.drawImage(img, panel.bbox.x, panel.bbox.y, img.width / scale, img.height / scale);
       if (frame.face) faceAbs = { x: frame.face.x + panel.bbox.x, y: frame.face.y + panel.bbox.y, w: frame.face.w, h: frame.face.h };
     } else {
@@ -255,12 +305,14 @@ export function renderCover(canvas, doc, photos, sizeKey) {
     report.panels.push({
       index: i, poly: panel.poly, bbox: panel.bbox, zone: panel.zone, hero: panel.hero, photoId: photo ? photo.id : null,
       face: faceAbs, faceInside: faceAbs ? rectInsidePolygon(faceAbs, panel.poly) : true,
+      neon, neonMix: neonPanelGradeMix(neon, grade.key),
     });
   });
 
-  // 3. One colour story across the poster.
+  // 3. One colour story across the poster; strongly neon panels keep their magenta and cyan under a golden grade.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  applyGradeByKey(grade.key, ctx, pw, ph, scale);
+  const keep = buildNeonKeepMask(report.panels.map((p) => ({ poly: p.poly, mix: p.neonMix })), pw, ph, scale);
+  applyGradeByKey(grade.key, ctx, pw, ph, scale, keep);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   for (const panel of layout.panels) drawPanelKeyline(ctx, panel.poly, pal.frame, W, panel.hero);
 
@@ -307,8 +359,7 @@ export function renderCover(canvas, doc, photos, sizeKey) {
       text = (cap.tags && cap.tags[i]) || '';
     }
     if (!text) return;
-    const avoid = rects.filter((r) => r.kind !== 'tag');
-    const spot = placeNameTag(ctx, text, panel, info.face, avoid, tagSize, W, H);
+    const spot = placeNameTagClearOfTitle(ctx, text, panel, info.face, rects, tagSize, W, H);
     if (!spot) return;
     const r = drawNameTag(ctx, text, spot.x, spot.y, spot.size, pal);
     if (r) {
@@ -323,8 +374,13 @@ export function renderCover(canvas, doc, photos, sizeKey) {
   ctx.restore();
 
   // Face safety report: no lettering over any face.
+  // Finish checks: each name tag keeps a margin from the title band, script, ribbon and seal; heads are measured
+  // against their panel height.
+  const tagMargin = tagSize * 0.25;
   for (const p of report.panels) {
     p.coveredBy = p.face ? rects.filter((r) => rectsOverlap(r, p.face, -2)).map((r) => r.kind) : [];
+    p.tagTouches = p.tag ? rects.filter((r) => TAG_CLEAR_KINDS.has(r.kind) && rectsOverlap(r, p.tag, tagMargin)).map((r) => r.kind) : [];
+    p.headShare = p.face ? p.face.h / p.bbox.h : 0;
   }
   return report;
 }
